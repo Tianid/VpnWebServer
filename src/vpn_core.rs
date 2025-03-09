@@ -1,16 +1,18 @@
-use std::process::{Command};
-use std::sync::{Mutex};
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 pub struct VpnManager {
     status: Mutex<VpnStatus>,
+    callback: Arc<dyn Fn(VpnStatus) + Send + Sync>
 }
 
 
 impl VpnManager {
 
-    pub fn new() -> Self {
+    pub fn new(callback: Arc<dyn Fn(VpnStatus) + Send + Sync>) -> Self {
         Self {
             status: Mutex::new(VpnStatus::Disconnected),
+            callback
         }
     }
 
@@ -70,11 +72,30 @@ impl VpnManager {
 
     fn set_status(&self, status: VpnStatus) {
         *self.status.lock().unwrap() = status;
-        // FIXME call callback
+        (self.callback)(status)
     }
 
     pub fn get_status(&self) -> VpnStatus {
         *self.status.lock().unwrap()
+    }
+
+    pub fn get_vpn_status(&self) -> VpnStatus {
+        let output = Command::new("ip")
+            .arg("link")
+            .arg("show")
+            .output()
+            .expect("Не удалось выполнить ip link");
+
+        let actual_status: VpnStatus = if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.contains("tun") { VpnStatus::Connected } else { VpnStatus::Disconnected }
+        } else {
+            VpnStatus::Disconnected
+        };
+
+        self.set_status(actual_status);
+
+        actual_status
     }
 }
 
@@ -86,7 +107,7 @@ impl VpnManager {
 
 
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum VpnStatus {
     Disconnected,
     Connected,
