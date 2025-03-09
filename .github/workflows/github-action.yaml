@@ -35,4 +35,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: raspberry-pi5-binary
-          path: target/aarch64-unknown-linux-gnu/release/your-binary-name
+          path: target/aarch64-unknown-linux-gnu/release/VpnWebServer
