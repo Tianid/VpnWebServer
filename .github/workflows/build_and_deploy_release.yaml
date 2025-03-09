@@ -1,12 +1,12 @@
-name: Build for Raspberry Pi 5
+name: Build and deploy release Aarch64
 
 on:
   push:
-    branches:
-      - server_rework
+    tags:
+      - "v*.*.*"
 
 jobs:
-  build:
+  release-build:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,7 +27,7 @@ jobs:
         run: |
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
-      - name: Build for Raspberry Pi 5
+      - name: Build for Aarch64
         run: |
           RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --release --target=aarch64-unknown-linux-gnu
 
@@ -37,8 +37,14 @@ jobs:
           cp target/aarch64-unknown-linux-gnu/release/VpnWebServer release_package/
           cp -r resources release_package/
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: raspberry-pi5-package
-          path: release_package
+          tag_name: ${{ github.ref_name }}
+          release_name: "Release ${{ github.ref_name }}"
+          body: "Aarch64 realease build"
+          draft: false
+          prerelease: false
+          files: release_package/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
