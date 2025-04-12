@@ -1,3 +1,5 @@
+use utils::args_reader::get_server_config;
+
 mod responses;
 mod requests;
 mod generated;
@@ -7,5 +9,5 @@ mod logger;
 mod core;
 
 fn main() {
-    web_server::start(web_server::web_server_configuration::WebServerConfiguration::new("127.0.0.1".as_ref(), "9000".as_ref()));
+    web_server::start(get_server_config());
 }
