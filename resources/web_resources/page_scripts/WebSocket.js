@@ -1,4 +1,6 @@
-const socket = new WebSocket(`ws://127.0.0.1:9000/ws`, `http`);
+const host = window.location.hostname;
+const port = window.location.port;
+const socket = new WebSocket(`ws://${host}:${port}/ws`, `http`);
 
 var isConnected = false;
 
