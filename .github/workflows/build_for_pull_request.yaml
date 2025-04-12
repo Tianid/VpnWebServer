@@ -17,13 +17,11 @@ jobs:
         with:
           targets: aarch64-unknown-linux-musl
 
-      - name: Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y musl-tools
+      - name: Install cross
+        run: cargo install cross
 
-      - name: Build with musl
-        run: cargo build --release --target=aarch64-unknown-linux-musl
+      - name: Build with cross
+        run: cross build --release --target=aarch64-unknown-linux-musl
 
       - name: Prepare Artifact Directory
         run: |
