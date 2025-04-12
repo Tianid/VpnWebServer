@@ -1,11 +1,11 @@
 use std::env;
 use std::net::Ipv4Addr;
-use crate::entities::web_server_config::WebServerConfig;
+use crate::web_server::web_server_configuration::WebServerConfiguration;
 
 const DEFAULT_SEVER_ADDRESS: &str = "127.0.0.1";
 const DEFAULT_PORT: &str = "9000";
 
-pub fn get_server_config() -> WebServerConfig {
+pub fn get_server_config() -> WebServerConfiguration {
     let args: Vec<String> = env::args().collect();
 
     let mut address = String::new();
@@ -46,7 +46,7 @@ pub fn get_server_config() -> WebServerConfig {
         port = DEFAULT_PORT.to_string();
     }
 
-    WebServerConfig { address, port }
+    WebServerConfiguration::new(address.as_str(), port.as_str())
 }
 
 fn is_valid_ipv4(ip: &str) -> bool {
