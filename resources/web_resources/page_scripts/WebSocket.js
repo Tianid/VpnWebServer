@@ -1,6 +1,6 @@
 const host = window.location.hostname;
 const port = window.location.port;
-const socket = new WebSocket(`ws://${host}:${port}/ws`, "http");
+const socket = new WebSocket(`ws://${host}:${port}/ws`);
 
 let isConnected = false;
 
@@ -9,6 +9,7 @@ const indicator = document.getElementById("vpnStatus");
 const statusText = document.getElementById("statusText");
 const vpnToggleButton = document.getElementById("vpnToggleButton");
 const wifiReconnectButton = document.getElementById("wifiReconnectButton");
+const refreshStatusButton = document.getElementById("refreshStatusButton");
 
 // === Translations for RU and EN ===
 const translations = {
@@ -18,7 +19,8 @@ const translations = {
     inProcess: "In Process",
     connectBtn: "Connect",
     disconnectBtn: "Disconnect",
-    wifiBtn: "Reconnect WiFi"
+    wifiBtn: "Reconnect WiFi",
+    refreshBtn: "Refresh"
   },
   ru: {
     connected: "Подключено",
@@ -26,7 +28,8 @@ const translations = {
     inProcess: "В процессе",
     connectBtn: "Подключиться",
     disconnectBtn: "Отключиться",
-    wifiBtn: "Переподключить WiFi"
+    wifiBtn: "Переподключить WiFi",
+    refreshBtn: "Обновить"
   }
 };
 
@@ -36,14 +39,11 @@ const isRussian = userLang.startsWith("ru");
 const locale = isRussian ? "ru" : "en";
 const t = translations[locale];
 
-// === Apply initial button text based on language ===
+// === Apply initial UI text ===
 document.addEventListener("DOMContentLoaded", () => {
-  if (vpnToggleButton) {
-    vpnToggleButton.textContent = t.connectBtn;
-  }
-  if (wifiReconnectButton) {
-    wifiReconnectButton.textContent = t.wifiBtn;
-  }
+  if (vpnToggleButton) vpnToggleButton.textContent = t.connectBtn;
+  if (wifiReconnectButton) wifiReconnectButton.textContent = t.wifiBtn;
+  if (refreshStatusButton) refreshStatusButton.textContent = t.refreshBtn;
 });
 
 // === Update visual state ===
@@ -53,8 +53,7 @@ function updateStatusUI(state) {
       indicator.style.backgroundColor = "green";
       statusText.textContent = t.connected;
       vpnToggleButton.textContent = t.disconnectBtn;
-      vpnToggleButton.disabled = false;
-      wifiReconnectButton.disabled = false;
+      setButtonsEnabled(true);
       isConnected = true;
       break;
 
@@ -62,8 +61,7 @@ function updateStatusUI(state) {
       indicator.style.backgroundColor = "red";
       statusText.textContent = t.disconnected;
       vpnToggleButton.textContent = t.connectBtn;
-      vpnToggleButton.disabled = false;
-      wifiReconnectButton.disabled = false;
+      setButtonsEnabled(true);
       isConnected = false;
       break;
 
@@ -71,25 +69,30 @@ function updateStatusUI(state) {
       indicator.style.backgroundColor = "orange";
       statusText.textContent = t.inProcess;
       vpnToggleButton.textContent = t.disconnectBtn;
-      vpnToggleButton.disabled = true;
-      wifiReconnectButton.disabled = true;
+      setButtonsEnabled(false);
       break;
   }
 }
 
-// === Request initial status when socket is opened ===
+// === Enable or disable all action buttons ===
+function setButtonsEnabled(enabled) {
+  vpnToggleButton.disabled = !enabled;
+  wifiReconnectButton.disabled = !enabled;
+  refreshStatusButton.disabled = !enabled;
+}
+
+// === WebSocket open: request initial status ===
 socket.addEventListener("open", function () {
   const message = JSON.stringify({ request_type: "Status" });
   socket.send(message);
 });
 
-// === Handle incoming messages from server ===
+// === Handle messages from server ===
 socket.addEventListener("message", function (event) {
   console.log(`Received message from server: ${event.data}`);
 
   try {
     const data = JSON.parse(event.data);
-
     if (data.status === "Connected") {
       updateStatusUI("Connected");
     } else if (data.status === "Disconnected") {
@@ -114,8 +117,6 @@ document.addEventListener("DOMContentLoaded", () => {
       updateStatusUI("InProcess");
       socket.send(JSON.stringify(message));
     });
-  } else {
-    console.error("VPN toggle button not found in DOM");
   }
 
   if (wifiReconnectButton) {
@@ -123,8 +124,14 @@ document.addEventListener("DOMContentLoaded", () => {
       updateStatusUI("InProcess");
       socket.send(JSON.stringify({ request_type: "ReconnectToWiFi" }));
     });
-  } else {
-    console.error("WiFi reconnect button not found in DOM");
+  }
+
+  if (refreshStatusButton) {
+    refreshStatusButton.addEventListener("click", () => {
+      updateStatusUI("InProcess");
+      const message = JSON.stringify({ request_type: "Status" });
+      socket.send(message);
+    });
   }
 });
 

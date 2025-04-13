@@ -8,6 +8,7 @@
     * {
       box-sizing: border-box;
     }
+
     body {
       margin: 0;
       font-family: Arial, sans-serif;
@@ -17,29 +18,59 @@
       align-items: center;
       justify-content: center;
     }
+
     .container {
       text-align: center;
+      position: relative;
+      width: 100%;
     }
+
+    .refresh-button {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      background-color: #007BFF;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    .refresh-button:hover:enabled {
+      background-color: #0056b3;
+    }
+
+    .refresh-button:disabled {
+      background-color: gray;
+      cursor: not-allowed;
+    }
+
     .status-indicator {
       width: 100px;
       height: 100px;
       margin: 0 auto 20px auto;
       border-radius: 50%;
-      background-color: red; /* по умолчанию */
+      background-color: red;
       transition: background-color 0.3s ease;
     }
+
     .status-text {
       font-size: 24px;
       font-weight: bold;
       margin-bottom: 20px;
       color: #333;
     }
+
     .buttons {
       display: flex;
       flex-direction: column;
       gap: 10px;
       align-items: center;
     }
+
     button {
       padding: 10px 20px;
       font-size: 16px;
@@ -50,8 +81,14 @@
       cursor: pointer;
       transition: background-color 0.2s ease;
     }
-    button:hover {
+
+    button:hover:enabled {
       background-color: #0056b3;
+    }
+
+    button:disabled {
+      background-color: gray;
+      cursor: not-allowed;
     }
 
     @media (max-width: 600px) {
@@ -59,17 +96,26 @@
         width: 80px;
         height: 80px;
       }
+
       .status-text {
         font-size: 20px;
       }
+
       button {
         width: 80%;
+      }
+
+      .refresh-button {
+        padding: 8px 16px;
+        font-size: 14px;
       }
     }
   </style>
 </head>
 <body>
   <div class="container">
+    <button id="refreshStatusButton" class="refresh-button">Обновить</button>
+
     <div id="vpnStatus" class="status-indicator"></div>
     <div id="statusText" class="status-text">Disconnected</div>
 
