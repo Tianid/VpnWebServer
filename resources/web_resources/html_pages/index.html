@@ -21,22 +21,23 @@
 
     .container {
       text-align: center;
-      position: relative;
-      width: 100%;
     }
 
     .refresh-button {
       position: absolute;
-      top: 20px;
-      right: 20px;
-      padding: 10px 20px;
-      font-size: 16px;
+      top: 10px;
+      right: 10px;
+      padding: 10px 16px;
+      font-size: 14px;
       border: none;
       border-radius: 8px;
       background-color: #007BFF;
       color: white;
       cursor: pointer;
       transition: background-color 0.2s ease;
+      z-index: 10;
+      width: auto;
+      max-width: none;
     }
 
     .refresh-button:hover:enabled {
@@ -106,8 +107,12 @@
       }
 
       .refresh-button {
-        padding: 8px 16px;
-        font-size: 14px;
+        padding: 6px 12px;
+        font-size: 12px;
+        top: 8px;
+        right: 8px;
+        width: auto;
+        max-width: 50%;
       }
     }
   </style>
