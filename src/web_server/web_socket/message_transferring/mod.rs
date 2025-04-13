@@ -18,7 +18,7 @@ pub fn parse_request(request: String) -> Option<UserWsRequest> {
 pub fn create_response(state: CoreState) -> Option<String> {
     let result = serde_json::to_string(&state);
     match result {
-        Ok(str) => Some(str),
+        Ok(str) => Some(format!("{{\"status\": {}}}", str)),
         Err(error) => {
             logger::error(format!("Faield to serialzie response state={:?}, error={}", state, error).as_str());
             None

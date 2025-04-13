@@ -21,11 +21,13 @@ impl CommandBuilder {
     pub fn build(&self) -> Command {
         if self.command.is_none() { return Command::new(self.base.as_str()) }
 
-        match self.command.unwrap() {
-            CoreCommand::Connect(location) => self.build_connect(location),
-            CoreCommand::Disconnect        => self.build_disconnect(),
-            CoreCommand::Restart(time)     => self.build_restart(time),
-            CoreCommand::Status            => self.build_status()
+        match self.command.as_ref().unwrap() {
+            CoreCommand::Connect(location)    => self.build_connect(*location),
+            CoreCommand::Disconnect           => self.build_disconnect(),
+            CoreCommand::Restart(time)        => self.build_restart(*time),
+            CoreCommand::Status               => self.build_status(),
+            CoreCommand::GetSSID              => self.build_get_ssid(),
+            CoreCommand::ReconnectToSSID(str) => self.build_reconnect_to_ssid(str),
         }
     }
 
@@ -60,6 +62,21 @@ impl CommandBuilder {
     fn build_status(&self) -> Command {
         let mut command = Command::new(self.base.as_str());
         command.arg("status");
+
+        command
+    }
+
+    fn build_get_ssid(&self) -> Command {
+        let mut command = Command::new("sh");
+        command.arg("-c");
+        command.arg(r#"nmcli -t -f active,ssid dev wifi | grep '^yes:' | cut -d':' -f2- "#);
+
+        command
+    }
+
+    fn build_reconnect_to_ssid(&self, ssid: &str) -> Command {
+        let mut command = Command::new("nmcli");
+        command.args(["connection", "up", "id", ssid, "--ask"]);
 
         command
     }

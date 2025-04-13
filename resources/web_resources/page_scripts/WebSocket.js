@@ -1,70 +1,130 @@
 const host = window.location.hostname;
 const port = window.location.port;
-const socket = new WebSocket(`ws://${host}:${port}/ws`, `http`);
+const socket = new WebSocket(`ws://${host}:${port}/ws`, "http");
 
-var isConnected = false;
+let isConnected = false;
 
-socket.addEventListener("open", function (event) {
-  socket.send("Connection Established");
-});
+// DOM elements
+const indicator = document.getElementById("vpnStatus");
+const statusText = document.getElementById("statusText");
+const vpnToggleButton = document.getElementById("vpnToggleButton");
+const wifiReconnectButton = document.getElementById("wifiReconnectButton");
 
-socket.addEventListener("message", function (event) {
-  console.log(`Receive from server message: ${event.data}`);
-  if (new String(event.data) == "Connection Established") {
-    console.log("Mesage sended to back");
-    socket.send("Send again from Client");
+// === Translations for RU and EN ===
+const translations = {
+  en: {
+    connected: "Connected",
+    disconnected: "Disconnected",
+    inProcess: "In Process",
+    connectBtn: "Connect",
+    disconnectBtn: "Disconnect",
+    wifiBtn: "Reconnect WiFi"
+  },
+  ru: {
+    connected: "Подключено",
+    disconnected: "Отключено",
+    inProcess: "В процессе",
+    connectBtn: "Подключиться",
+    disconnectBtn: "Отключиться",
+    wifiBtn: "Переподключить WiFi"
   }
-
-  if (new String(event.data) == "connected") {
-    console.log("status changed to connected")
-    isConnected = true
-  }
-
-  if (new String(event.data) == "disconnected") {
-    console.log("status changed to disconnected")
-    isConnected = false
-  }
-});
-
-/*addEventListener("error", function (error) {
-    console.log(error);
-}); */
-
-socket.onerror = (error) => console.error("ERROR:", error);
-
-const contactServer = () => {
-  socket.send("Initialize");
 };
 
+// === Language detection ===
+const userLang = navigator.language.toLowerCase();
+const isRussian = userLang.startsWith("ru");
+const locale = isRussian ? "ru" : "en";
+const t = translations[locale];
 
-// document.getElementById("sendButton").addEventListener("click", () => {
-//     if (socket.readyState === WebSocket.OPEN) {
-//         socket.send("Привет, сервер! Это сообщение от клиента.");
-//         console.log("Сообщение отправлено");
-//     } else {
-//         console.error("WebSocket не подключен");
-//     }
-// });
-
-
-
+// === Apply initial button text based on language ===
 document.addEventListener("DOMContentLoaded", () => {
-    const button = document.getElementById("sendButton");
-
-    if (button) {
-        button.addEventListener("click", () => {
-          var message = ""
-          if (isConnected) {
-            message = "{\"request_type\": \"Disconnect\"}"
-            console.log("message is disconnect");
-          } else { 
-            message = "{\"request_type\": \"Connect\"}"
-            console.log("message is connect");
-          }
-          socket.send(message);
-          console.log("Кнопка нажата! ${isConnected}");
-        });
-    } else {
-        console.error("Ошибка: Кнопка не найдена в DOM!");
-    }
+  if (vpnToggleButton) {
+    vpnToggleButton.textContent = t.connectBtn;
+  }
+  if (wifiReconnectButton) {
+    wifiReconnectButton.textContent = t.wifiBtn;
+  }
 });
+
+// === Update visual state ===
+function updateStatusUI(state) {
+  switch (state) {
+    case "Connected":
+      indicator.style.backgroundColor = "green";
+      statusText.textContent = t.connected;
+      vpnToggleButton.textContent = t.disconnectBtn;
+      vpnToggleButton.disabled = false;
+      wifiReconnectButton.disabled = false;
+      isConnected = true;
+      break;
+
+    case "Disconnected":
+      indicator.style.backgroundColor = "red";
+      statusText.textContent = t.disconnected;
+      vpnToggleButton.textContent = t.connectBtn;
+      vpnToggleButton.disabled = false;
+      wifiReconnectButton.disabled = false;
+      isConnected = false;
+      break;
+
+    case "InProcess":
+      indicator.style.backgroundColor = "orange";
+      statusText.textContent = t.inProcess;
+      vpnToggleButton.textContent = t.disconnectBtn;
+      vpnToggleButton.disabled = true;
+      wifiReconnectButton.disabled = true;
+      break;
+  }
+}
+
+// === Request initial status when socket is opened ===
+socket.addEventListener("open", function () {
+  const message = JSON.stringify({ request_type: "Status" });
+  socket.send(message);
+});
+
+// === Handle incoming messages from server ===
+socket.addEventListener("message", function (event) {
+  console.log(`Received message from server: ${event.data}`);
+
+  try {
+    const data = JSON.parse(event.data);
+
+    if (data.status === "Connected") {
+      updateStatusUI("Connected");
+    } else if (data.status === "Disconnected") {
+      updateStatusUI("Disconnected");
+    }
+  } catch (e) {
+    console.warn("Failed to parse server message as JSON:", event.data);
+  }
+});
+
+socket.onerror = (error) => {
+  console.error("WebSocket error:", error);
+};
+
+// === Button click handlers ===
+document.addEventListener("DOMContentLoaded", () => {
+  if (vpnToggleButton) {
+    vpnToggleButton.addEventListener("click", () => {
+      const message = {
+        request_type: isConnected ? "Disconnect" : "Connect"
+      };
+      updateStatusUI("InProcess");
+      socket.send(JSON.stringify(message));
+    });
+  } else {
+    console.error("VPN toggle button not found in DOM");
+  }
+
+  if (wifiReconnectButton) {
+    wifiReconnectButton.addEventListener("click", () => {
+      updateStatusUI("InProcess");
+      socket.send(JSON.stringify({ request_type: "ReconnectToWiFi" }));
+    });
+  } else {
+    console.error("WiFi reconnect button not found in DOM");
+  }
+});
+

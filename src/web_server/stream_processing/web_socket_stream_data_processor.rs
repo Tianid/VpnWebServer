@@ -3,6 +3,7 @@ use std::net::TcpStream;
 use crate::core::core_state::CoreState;
 use crate::web_server::stream_processing::stream_data_processor::StreamDataProcessor;
 use crate::web_server::connection_state::ConnectionState;
+use crate::web_server::web_socket::message_transferring::create_response;
 use crate::web_server::web_socket::message_transferring::parse_request;
 use crate::web_server::web_socket::message_transferring::ws_request::RequestType;
 use crate::web_server::web_socket::ser_deser::decode_message;
@@ -25,7 +26,7 @@ impl StreamDataProcessor for WebSocketStreamDataProcessor {
         logger::info(format!("Receive message : {}", message).as_str());
 
         if message == "PING" {
-            sender::send(stream, "PONG");
+            self.send_status(stream);
             return ConnectionState::KeepALive
         }
         
@@ -36,26 +37,26 @@ impl StreamDataProcessor for WebSocketStreamDataProcessor {
         }
         
         match request.unwrap().request_type {
-            RequestType::Connect    => core::connect_sync(),
-            RequestType::Disconnect => core::disconnect_sync(),
-            RequestType::Restart    => core::restart_sync(),
+            RequestType::Connect            => core::connect_sync(),
+            RequestType::Disconnect         => core::disconnect_sync(),
+            RequestType::Restart            => core::restart_sync(),
+            RequestType::ReconnectToWiFi    => core::reconnect_to_wifi(),
+            RequestType::Status             => self.send_status(stream),
         }
-
-        let status = core::calculate_state_sync();
-        sender::send(stream, &self.get_strings_from_status(status));
 
         ConnectionState::KeepALive
     }
 }
 
 impl WebSocketStreamDataProcessor {
-    fn get_strings_from_status(&self, status: CoreState) -> String {
-        match status {
-            CoreState::Connected        => String::from("connected"),
-            CoreState::Connecting       => String::from("connecting"),
-            CoreState::Disconnected     => String::from("disconnected"),
-            CoreState::Reconnecting     => String::from("reconnecting"),
-            CoreState::Disconnecting    => String::from("disconnecting"),
+
+    fn send_status(&self, stream: &mut TcpStream) {
+        let status = core::calculate_state_sync();
+        if let Some(response) = create_response(status) {
+            sender::send(stream, response.as_str());
+            return
         }
+
+        logger::error("Failed to send status, status is missing");
     }
 }

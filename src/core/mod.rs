@@ -3,6 +3,10 @@ mod command_builder;
 mod command_parser;
 mod commands;
 
+use std::process::Stdio;
+use std::time::Duration;
+use std::thread::sleep;
+
 use crate::logger;
 use crate::core::core_state::CoreState;
 use crate::core::commands::restart_time::RestartTime;
@@ -43,6 +47,27 @@ pub fn restart_sync() {
     }
 }
 
+pub fn reconnect_to_wifi() {
+    let ssid = get_ssid();
+    if ssid.is_none() {
+        logger::error("Failed to execute command restart to wifi, ssid is missing");
+        return
+    }
+
+    let mut command = CommandBuilder::new()
+        .set_command(CoreCommand::ReconnectToSSID(ssid.clone().unwrap()))
+        .build();
+
+    match command.output() {
+        Ok(_)       => {
+            println!("@@@@ {}", get_ssid().unwrap());
+            await_reconnection_to_ssid(ssid.unwrap().as_str(), 10, Duration::from_millis(500));
+            logger::debug("Successfully execute restart to wifi command")
+        }
+        Err(error)  => logger::error(format!("Failed to execute command restart to wifi, error: {}", error).as_str()),
+    }
+}
+
 pub fn calculate_state_sync() -> CoreState {
     execute_status_command()
 }
@@ -65,6 +90,40 @@ fn execute_status_command() -> CoreState {
         Err(error)  => {
             logger::error(format!("Failed to execute status command error: {}", error).as_str());
             CoreState::Disconnected
+        }
+    }
+}
+
+fn get_ssid() -> Option<String> {
+    let command = CommandBuilder::new()
+        .set_command(CoreCommand::GetSSID)
+        .build()
+        .stdout(Stdio::piped())
+        .output();
+
+    match command {
+        Ok(output) => {
+            let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            logger::debug(format!("Successfully get SSID from system = {}", ssid).as_str());
+            Some(ssid)
+        },
+        Err(error) => {
+            logger::error(format!("Failed to get SSID from system, error = {}", error).as_str());
+            None
+        },
+    }
+}
+
+fn await_reconnection_to_ssid(current_ssid: &str, timeout_secs: u64, try_check_in_ms: Duration) {
+    let start = std::time::Instant::now();
+    while start.elapsed().as_secs() < timeout_secs {
+
+        match !(get_ssid().is_none_or(|ssid| { ssid.is_empty() || current_ssid != ssid })) {
+            true  => {
+                sleep(Duration::from_millis(1_500));
+                return
+            }
+            false => sleep(try_check_in_ms)
         }
     }
 }

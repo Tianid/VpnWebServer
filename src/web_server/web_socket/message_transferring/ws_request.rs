@@ -10,4 +10,6 @@ pub enum RequestType {
     Connect,
     Disconnect,
     Restart,
+    Status,
+    ReconnectToWiFi
 }
