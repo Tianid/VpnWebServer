@@ -41,8 +41,10 @@ impl StreamDataProcessor for WebSocketStreamDataProcessor {
             RequestType::Disconnect         => core::disconnect_sync(),
             RequestType::Restart            => core::restart_sync(),
             RequestType::ReconnectToWiFi    => core::reconnect_to_wifi(),
-            RequestType::Status             => self.send_status(stream),
+            RequestType::Status             => { /* Do nothing */ }
         }
+
+        self.send_status(stream);
 
         ConnectionState::KeepALive
     }

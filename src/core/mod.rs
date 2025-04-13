@@ -60,7 +60,6 @@ pub fn reconnect_to_wifi() {
 
     match command.output() {
         Ok(_)       => {
-            println!("@@@@ {}", get_ssid().unwrap());
             await_reconnection_to_ssid(ssid.unwrap().as_str(), 10, Duration::from_millis(500));
             logger::debug("Successfully execute restart to wifi command")
         }
