@@ -2,7 +2,7 @@ use time::OffsetDateTime;
 use time::format_description;
 use time::UtcOffset;
 
-const DATE_FORMAT: &str = "[year]-[month]-[day] [hour]:[minute]:[second]";
+const DATE_FORMAT: &str = "[year]-[month]-[day] [hour]:[minute]:[second]:[subsecond digits:3]";
 
 
 pub fn info(message: &str) { println!("[{}] 🟦 {}", get_time(), message) }
