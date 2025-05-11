@@ -13,8 +13,8 @@ pub fn trace(message: &str) { println!("[{}] 🟫 {}", get_time(), message) }
 
 fn get_time() -> String {
     let now_time = OffsetDateTime::now_utc();
-
-    let offset = match UtcOffset::from_hms(3, 0, 0) { 
+    
+    let offset = match UtcOffset::current_local_offset() { 
         Ok(_offset) => _offset,
         Err(_)      => return String::new()
     };
