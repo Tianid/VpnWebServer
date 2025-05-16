@@ -42,7 +42,7 @@ pub fn get_server_config() -> WebServerConfiguration {
         address = DEFAULT_SEVER_ADDRESS.to_string();
     }
 
-    if port.is_empty() || !port.parse::<u8>().is_ok() {
+    if port.is_empty() || !port.parse::<u16>().is_ok() {
         port = DEFAULT_PORT.to_string();
     }
 
