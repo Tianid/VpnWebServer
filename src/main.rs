@@ -7,6 +7,7 @@ mod utils;
 mod web_server;
 mod logger;
 mod core;
+mod new_src;
 
 fn main() {
     web_server::start(get_server_config());
