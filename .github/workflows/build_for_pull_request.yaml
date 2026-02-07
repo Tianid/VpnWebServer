@@ -1,0 +1,36 @@
+name: Build Aarch64
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  ci-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Install cross
+        run: cargo install cross
+
+      - name: Build with cross
+        run: cross build --release --target=aarch64-unknown-linux-musl
+
+      - name: Prepare Artifact Directory
+        run: |
+          mkdir -p release_package
+          cp target/aarch64-unknown-linux-musl/release/VpnWebServer release_package/
+          cp -r resources release_package/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpn-web-server-build-package
+          path: release_package

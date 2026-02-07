@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VPN Status Page</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f5f5f5;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      text-align: center;
+    }
+
+    .refresh-button {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 10px 16px;
+      font-size: 14px;
+      border: none;
+      border-radius: 8px;
+      background-color: #007BFF;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      z-index: 10;
+      width: auto;
+      max-width: none;
+    }
+
+    .refresh-button:hover:enabled {
+      background-color: #0056b3;
+    }
+
+    .refresh-button:disabled {
+      background-color: gray;
+      cursor: not-allowed;
+    }
+
+    .status-indicator {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 20px auto;
+      border-radius: 50%;
+      background-color: red;
+      transition: background-color 0.3s ease;
+    }
+
+    .status-text {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    .buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      background-color: #007BFF;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    button:hover:enabled {
+      background-color: #0056b3;
+    }
+
+    button:disabled {
+      background-color: gray;
+      cursor: not-allowed;
+    }
+
+    @media (max-width: 600px) {
+      .status-indicator {
+        width: 80px;
+        height: 80px;
+      }
+
+      .status-text {
+        font-size: 20px;
+      }
+
+      button {
+        width: 80%;
+      }
+
+      .refresh-button {
+        padding: 6px 12px;
+        font-size: 12px;
+        top: 8px;
+        right: 8px;
+        width: auto;
+        max-width: 50%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <button id="refreshStatusButton" class="refresh-button">Обновить</button>
+
+    <div id="vpnStatus" class="status-indicator"></div>
+    <div id="statusText" class="status-text">Disconnected</div>
+
+    <div class="buttons">
+      <button id="vpnToggleButton">Подключиться</button>
+      <button id="wifiReconnectButton">Переподключить WiFi</button>
+    </div>
+  </div>
+
+  <script src="/resources/web_resources/page_scripts/WebSocket.js"></script>
+</body>
+</html>
+
