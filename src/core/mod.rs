@@ -1,137 +1,170 @@
-mod command_builder;
-mod command_parser;
 mod commands;
-pub mod core_state;
+mod location_parser;
+mod state_parser;
+pub mod location;
+pub mod location_cache;
 
+pub use location::Location;
+pub use location_cache::LocationCache;
+
+use std::fmt;
+use std::io;
 use std::process::Stdio;
 use std::thread::sleep;
 use std::time::Duration;
 
-use crate::core::command_builder::CommandBuilder;
-use crate::core::commands::command::CoreCommand;
-use crate::core::commands::location::Location;
-use crate::core::commands::restart_time::RestartTime;
-use crate::core::core_state::CoreState;
-use crate::logger;
+use serde::Serialize;
 
-pub fn connect_sync() {
-    let mut command = CommandBuilder::new()
-        .set_command(CoreCommand::Connect(Location::FI))
-        .build();
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum CoreState {
+    Connected,
+    Disconnected,
+    Reconnecting,
+}
 
-    match command.output() {
-        Ok(_) => logger::debug("Successfully execute connect command"),
-        Err(error) => {
-            logger::error(format!("Failed to execute connect command, error: {}", error).as_str())
+#[derive(Debug)]
+pub enum CoreError {
+    CommandFailed { cmd: String, stderr: String },
+    ParseError    { context: String, raw: String },
+    IoError(io::Error),
+}
+
+impl fmt::Display for CoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CoreError::CommandFailed { cmd, stderr } => {
+                write!(f, "Command '{}' failed: {}", cmd, stderr)
+            }
+            CoreError::ParseError { context, raw } => {
+                write!(f, "Parse error in {}: {:?}", context, raw)
+            }
+            CoreError::IoError(e) => write!(f, "I/O error: {}", e),
         }
     }
 }
 
-pub fn disconnect_sync() {
-    let mut command = CommandBuilder::new()
-        .set_command(CoreCommand::Disconnect)
-        .build();
+pub type CoreResult<T> = Result<T, CoreError>;
 
-    match command.output() {
-        Ok(_) => logger::debug("Successfully execute disconnect command"),
-        Err(error) => logger::error(
-            format!("Failed to execute disconnect command, error: {}", error).as_str(),
-        ),
+pub fn connect(location: Option<String>) -> CoreResult<()> {
+    let output = commands::vpn_connect(location.as_deref())
+        .output()
+        .map_err(CoreError::IoError)?;
+    if output.status.success() {
+        log_info!("core", "VPN connect command succeeded");
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        log_error!("core", "VPN connect command failed: {}", stderr);
+        Err(CoreError::CommandFailed { cmd: "adguardvpn-cli connect".to_string(), stderr })
     }
 }
 
-pub fn restart_sync() {
-    let mut command = CommandBuilder::new()
-        .set_command(CoreCommand::Restart(RestartTime::Now))
-        .build();
-
-    match command.output() {
-        Ok(_) => logger::debug("Successfully execute restart command"),
-        Err(error) => {
-            logger::error(format!("Failed to execute restart command, error: {}", error).as_str())
-        }
+pub fn disconnect() -> CoreResult<()> {
+    let output = commands::vpn_disconnect()
+        .output()
+        .map_err(CoreError::IoError)?;
+    if output.status.success() {
+        log_info!("core", "VPN disconnect command succeeded");
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        log_error!("core", "VPN disconnect command failed: {}", stderr);
+        Err(CoreError::CommandFailed { cmd: "adguardvpn-cli disconnect".to_string(), stderr })
     }
 }
 
-pub fn reconnect_to_wifi() {
-    let ssid = get_ssid();
-    if ssid.is_none() {
-        logger::error("Failed to execute command restart to wifi, ssid is missing");
-        return;
-    }
-
-    let mut command = CommandBuilder::new()
-        .set_command(CoreCommand::ReconnectToSSID(ssid.clone().unwrap()))
-        .build();
-
-    match command.output() {
-        Ok(_) => {
-            await_reconnection_to_ssid(ssid.unwrap().as_str(), 10, Duration::from_millis(500));
-            logger::debug("Successfully execute restart to wifi command")
-        }
-        Err(error) => logger::error(
-            format!(
-                "Failed to execute command restart to wifi, error: {}",
-                error
-            )
-            .as_str(),
-        ),
+pub fn restart() -> CoreResult<()> {
+    let output = commands::system_restart()
+        .output()
+        .map_err(CoreError::IoError)?;
+    if output.status.success() {
+        log_info!("core", "Restart command invoked");
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        log_error!("core", "Restart command failed: {}", stderr);
+        Err(CoreError::CommandFailed { cmd: "shutdown -r now".to_string(), stderr })
     }
 }
 
-pub fn calculate_state_sync() -> CoreState {
-    execute_status_command()
+pub fn status() -> CoreResult<(CoreState, Option<String>)> {
+    let output = commands::vpn_status()
+        .output()
+        .map_err(CoreError::IoError)?;
+    let stdout   = String::from_utf8_lossy(&output.stdout);
+    let state    = state_parser::parse_status(&stdout);
+    let location = if state == CoreState::Connected {
+        state_parser::parse_location(&stdout)
+    } else {
+        None
+    };
+    log_debug!("core", "adguardvpn-cli status → {:?}", state);
+    Ok((state, location))
 }
 
-fn execute_status_command() -> CoreState {
-    let mut command = CommandBuilder::new()
-        .set_command(CoreCommand::Status)
-        .build();
+pub fn list_locations() -> CoreResult<Vec<Location>> {
+    let output = commands::vpn_list_locations(100)
+        .output()
+        .map_err(CoreError::IoError)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(CoreError::CommandFailed {
+            cmd: "adguardvpn-cli list-locations".to_string(),
+            stderr,
+        });
+    }
+    let stdout   = String::from_utf8_lossy(&output.stdout);
+    let mut locs = location_parser::parse_locations(&stdout);
+    locs.sort_by_key(|l| if l.ping_ms < 0 { i32::MAX } else { l.ping_ms });
+    log_debug!("core", "Fetched {} locations", locs.len());
+    Ok(locs)
+}
 
-    match command.output() {
-        Ok(output) => {
-            logger::debug("Successfully execute status command");
-            let res = String::from_utf8_lossy(&output.stdout);
-            let status = command_parser::parse_status(res.to_string());
-            logger::debug(format!("Receive status from system: {:?}", status).as_str());
-            status
-        }
-        Err(error) => {
-            logger::error(format!("Failed to execute status command error: {}", error).as_str());
-            CoreState::Disconnected
-        }
+pub fn reconnect_wifi() -> CoreResult<()> {
+    let ssid = get_ssid()?;
+    if ssid.is_empty() {
+        return Err(CoreError::ParseError {
+            context: "get_ssid".to_string(),
+            raw:     "(empty)".to_string(),
+        });
+    }
+    let output = commands::wifi_reconnect(&ssid)
+        .output()
+        .map_err(CoreError::IoError)?;
+    if output.status.success() {
+        await_reconnection_to_ssid(&ssid, 10, Duration::from_millis(500));
+        log_info!("wifi", "Wi-Fi reconnect succeeded");
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        log_error!("wifi", "Wi-Fi reconnect command failed: {}", stderr);
+        Err(CoreError::CommandFailed {
+            cmd: format!("nmcli connection up id {}", ssid),
+            stderr,
+        })
     }
 }
 
-fn get_ssid() -> Option<String> {
-    let command = CommandBuilder::new()
-        .set_command(CoreCommand::GetSSID)
-        .build()
+fn get_ssid() -> CoreResult<String> {
+    let output = commands::wifi_get_ssid()
         .stdout(Stdio::piped())
-        .output();
-
-    match command {
-        Ok(output) => {
-            let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            logger::debug(format!("Successfully get SSID from system = {}", ssid).as_str());
-            Some(ssid)
-        }
-        Err(error) => {
-            logger::error(format!("Failed to get SSID from system, error = {}", error).as_str());
-            None
-        }
-    }
+        .output()
+        .map_err(CoreError::IoError)?;
+    let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    log_debug!("wifi", "Detected SSID: {}", ssid);
+    Ok(ssid)
 }
 
-fn await_reconnection_to_ssid(current_ssid: &str, timeout_secs: u64, try_check_in_ms: Duration) {
+fn await_reconnection_to_ssid(current_ssid: &str, timeout_secs: u64, check_interval: Duration) {
     let start = std::time::Instant::now();
     while start.elapsed().as_secs() < timeout_secs {
-        match !(get_ssid().is_none_or(|ssid| ssid.is_empty() || current_ssid != ssid)) {
-            true => {
+        match get_ssid() {
+            Ok(ssid) if ssid == current_ssid && !ssid.is_empty() => {
                 sleep(Duration::from_millis(1_500));
                 return;
             }
-            false => sleep(try_check_in_ms),
+            _ => sleep(check_interval),
         }
     }
+    log_warn!("wifi", "SSID reconnect confirmation timed out after {}s", timeout_secs);
 }

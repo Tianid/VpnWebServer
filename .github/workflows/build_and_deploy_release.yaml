@@ -1,50 +1,73 @@
-name: Build and deploy release Aarch64
+name: Release Build
 
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
-  release-build:
+  build-and-release:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            apt_packages: gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross
+            archive_suffix: aarch64-linux-gnu
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust Toolchain
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-unknown-linux-gnu
+          targets: ${{ matrix.target }}
 
-      - name: Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Set up environment
+      - name: Install cross-linker
         run: |
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          sudo apt-get update -qq
+          sudo apt-get install -y ${{ matrix.apt_packages }}
 
-      - name: Build for Aarch64
-        run: |
-          RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --release --target=aarch64-unknown-linux-gnu
+      - name: Build
+        run: cargo build --release --target=${{ matrix.target }}
 
-      - name: Prepare Artifact Directory
+      - name: Package release archive
         run: |
-          mkdir -p release_package
-          cp target/aarch64-unknown-linux-gnu/release/VpnWebServer release_package/
-          cp -r resources release_package/
+          ARCHIVE="haven-${{ github.ref_name }}-${{ matrix.archive_suffix }}"
+          mkdir -p "${ARCHIVE}"
+          cp target/${{ matrix.target }}/release/haven "${ARCHIVE}/"
+          cp -r resources "${ARCHIVE}/"
+          tar -czf "${ARCHIVE}.tar.gz" "${ARCHIVE}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: "Release ${{ github.ref_name }}"
-          body: "Aarch64 realease build"
+          name: "Release ${{ github.ref_name }}"
+          body: |
+            ## haven ${{ github.ref_name }}
+
+            ### Targets included
+            - `aarch64-unknown-linux-gnu` — Raspberry Pi 5 (Pi OS / Debian, glibc)
+
+            ### Installation
+            1. Download and extract the `.tar.gz` archive.
+            2. Place the extracted folder on the Raspberry Pi.
+            3. Run: `./haven -a 0.0.0.0 -p 9000`
+
+            The `resources/` directory must remain alongside the binary.
           draft: false
           prerelease: false
-          files: release_package/*
+          files: "*.tar.gz"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

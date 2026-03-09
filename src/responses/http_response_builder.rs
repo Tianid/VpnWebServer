@@ -45,3 +45,92 @@ impl ResponseBuilder for HttpResponseBuilder {
         )
     }
 }
+
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::responses::response_builder::ResponseBuilder;
+
+    #[test]
+    fn build_200_contains_correct_status_line() {
+        let result = HttpResponseBuilder::new()
+            .status_code(200)
+            .content_type("text/html")
+            .text("<h1>OK</h1>")
+            .build();
+        assert!(result.starts_with("HTTP/1.1 200 OK\r\n"));
+    }
+
+    #[test]
+    fn build_contains_content_type_header() {
+        let result = HttpResponseBuilder::new()
+            .status_code(200)
+            .content_type("application/json")
+            .text("{}")
+            .build();
+        assert!(result.contains("Content-Type: application/json\r\n"));
+    }
+
+    #[test]
+    fn build_contains_correct_content_length() {
+        let body = "hello";
+        let result = HttpResponseBuilder::new()
+            .status_code(200)
+            .content_type("text/plain")
+            .text(body)
+            .build();
+        assert!(result.contains(&format!("Content-Length: {}\r\n", body.len())));
+    }
+
+    #[test]
+    fn build_body_appears_after_blank_line() {
+        let result = HttpResponseBuilder::new()
+            .status_code(200)
+            .content_type("text/plain")
+            .text("body-content")
+            .build();
+        assert!(result.ends_with("\r\n\r\nbody-content"));
+    }
+
+    #[test]
+    fn build_missing_status_code_returns_empty() {
+        let result = HttpResponseBuilder::new()
+            .content_type("text/plain")
+            .text("hello")
+            .build();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_missing_content_type_returns_empty() {
+        let result = HttpResponseBuilder::new()
+            .status_code(200)
+            .text("hello")
+            .build();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_missing_text_returns_empty() {
+        let result = HttpResponseBuilder::new()
+            .status_code(200)
+            .content_type("text/plain")
+            .build();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_404_uses_provided_status_code() {
+        let result = HttpResponseBuilder::new()
+            .status_code(404)
+            .content_type("text/plain")
+            .text("Not Found")
+            .build();
+        assert!(result.starts_with("HTTP/1.1 404 OK\r\n"));
+        assert!(result.ends_with("Not Found"));
+    }
+}
