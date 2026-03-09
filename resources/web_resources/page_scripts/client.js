@@ -24,6 +24,12 @@ const i18n = {
         log_panel_title:     'Server Log',
         log_clear:           'Clear',
         location_panel_title:'Locations',
+        confirm_wifi_title:  'Reconnect WiFi',
+        confirm_wifi_msg:    'Reconnect the device to the current Wi-Fi network?',
+        confirm_restart_title:'Restart Device',
+        confirm_restart_msg: 'Restart the device now? The connection will be briefly interrupted.',
+        btn_confirm:         'Confirm',
+        btn_cancel:          'Cancel',
     },
     ru: {
         title:               'Панель управления VPN',
@@ -46,6 +52,12 @@ const i18n = {
         log_panel_title:     'Лог сервера',
         log_clear:           'Очистить',
         location_panel_title:'Локации',
+        confirm_wifi_title:  'Переподключить WiFi',
+        confirm_wifi_msg:    'Переподключить устройство к текущей Wi-Fi сети?',
+        confirm_restart_title:'Перезагрузка',
+        confirm_restart_msg: 'Перезагрузить устройство? Соединение будет кратковременно прервано.',
+        btn_confirm:         'Подтвердить',
+        btn_cancel:          'Отмена',
     }
 };
 
@@ -75,6 +87,8 @@ function applyTranslations() {
     document.getElementById('refreshBtn').textContent = tr('btn_refresh');
     document.getElementById('wifiBtn').textContent = tr('btn_wifi');
     document.getElementById('restartBtn').textContent = tr('btn_restart');
+    document.getElementById('modalCancelBtn').textContent  = tr('btn_cancel');
+    document.getElementById('modalConfirmBtn').textContent = tr('btn_confirm');
     document.getElementById('locationSearch').placeholder = tr('location_placeholder');
     const logTitle = document.querySelector('[data-i18n="log_panel_title"]');
     if (logTitle) logTitle.textContent = tr('log_panel_title');
@@ -386,6 +400,28 @@ function sendWifi()    { sendMessage({ type: 'ReconnectWifi' }); }
 function sendRestart() { sendMessage({ type: 'Restart' }); }
 function sendRefresh() { sendMessage({ type: 'RefreshLocations' }); }
 
+// ── Confirmation modal ────────────────────────────────────────────────────────
+
+let _confirmCallback = null;
+
+function showConfirm(titleKey, msgKey, onConfirm) {
+    document.getElementById('modalTitle').textContent   = tr(titleKey);
+    document.getElementById('modalMessage').textContent = tr(msgKey);
+    document.getElementById('modalCancelBtn').textContent  = tr('btn_cancel');
+    document.getElementById('modalConfirmBtn').textContent = tr('btn_confirm');
+    _confirmCallback = onConfirm;
+    document.getElementById('confirmModal').classList.add('active');
+    document.getElementById('modalConfirmBtn').focus();
+}
+
+function hideConfirm() {
+    document.getElementById('confirmModal').classList.remove('active');
+    _confirmCallback = null;
+}
+
+function confirmWifi()    { showConfirm('confirm_wifi_title',    'confirm_wifi_msg',    sendWifi); }
+function confirmRestart() { showConfirm('confirm_restart_title', 'confirm_restart_msg', sendRestart); }
+
 // ── Log panel ─────────────────────────────────────────────────────────────────
 
 const MAX_LOG_LINES = 500;
@@ -454,5 +490,18 @@ function pingColor(ms) {
 document.addEventListener('DOMContentLoaded', function () {
     applyTranslations();
     connect();
+
+    document.getElementById('modalCancelBtn').addEventListener('click', hideConfirm);
+    document.getElementById('modalConfirmBtn').addEventListener('click', function () {
+        const cb = _confirmCallback;
+        hideConfirm();
+        if (cb) cb();
+    });
+    document.getElementById('confirmModal').addEventListener('click', function (e) {
+        if (e.target === this) hideConfirm();
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') hideConfirm();
+    });
 });
 

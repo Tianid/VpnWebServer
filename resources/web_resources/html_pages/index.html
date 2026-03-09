@@ -298,6 +298,63 @@
     #logOutput .log-debug { color: #6ea8fe; }
     #logOutput .log-trace { color: #888;    }
 
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.active { display: flex; }
+
+    .modal-card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 24px 28px;
+      max-width: 320px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .modal-title {
+      font-size: 17px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .modal-message {
+      font-size: 14px;
+      color: #555;
+      line-height: 1.5;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }
+
+    .modal-buttons button {
+      padding: 8px 18px;
+      font-size: 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    #modalCancelBtn          { background: #e9ecef; color: #333; }
+    #modalCancelBtn:hover    { background: #dee2e6; }
+    #modalConfirmBtn         { background: #dc3545; color: #fff; }
+    #modalConfirmBtn:hover   { background: #b02a37; }
+
     @media (max-width: 480px) {
       .status-indicator { width: 70px; height: 70px; }
       .status-text      { font-size: 18px; }
@@ -323,8 +380,8 @@
     <div class="buttons">
       <button id="toggleBtn" onclick="onToggleClick()" disabled>…</button>
       <div class="secondary-buttons">
-        <button id="wifiBtn" onclick="sendWifi()">Reconnect WiFi</button>
-        <button id="restartBtn" onclick="sendRestart()">Restart</button>
+        <button id="wifiBtn" onclick="confirmWifi()">Reconnect WiFi</button>
+        <button id="restartBtn" onclick="confirmRestart()">Restart</button>
       </div>
     </div>
 
@@ -357,6 +414,17 @@
     </summary>
     <div id="logOutput"></div>
   </details>
+
+  <div id="confirmModal" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div id="modalTitle" class="modal-title"></div>
+      <div id="modalMessage" class="modal-message"></div>
+      <div class="modal-buttons">
+        <button id="modalCancelBtn"></button>
+        <button id="modalConfirmBtn"></button>
+      </div>
+    </div>
+  </div>
 
   <script src="/resources/web_resources/page_scripts/client.js"></script>
 </body>
