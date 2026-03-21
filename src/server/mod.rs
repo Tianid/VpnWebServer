@@ -7,14 +7,22 @@ mod router;
 mod sender;
 pub mod ws;
 
-use connection_state::ConnectionState;
 use reader::read_stream;
 use http_handler::HttpHandler;
 use std::net::{TcpListener, TcpStream};
+use std::sync::OnceLock;
+use std::time::Instant;
 use crate::config::args::ServerConfig;
 use crate::core::LocationCache;
 
+static SERVER_START: OnceLock<Instant> = OnceLock::new();
+
+pub fn uptime_secs() -> u64 {
+    SERVER_START.get().map(|t| t.elapsed().as_secs()).unwrap_or(0)
+}
+
 pub fn start(configuration: ServerConfig, cache: LocationCache) {
+    SERVER_START.get_or_init(Instant::now);
     let upstream = format!("{}:{}", configuration.address, configuration.port);
     let listener = TcpListener::bind(upstream.clone())
         .expect(format!("[ERROR] Failed to bind to upstream {}", upstream).as_str());
@@ -37,16 +45,11 @@ pub fn start(configuration: ServerConfig, cache: LocationCache) {
     }
 }
 
+const READ_BUFFER_SIZE: usize = 4096;
+
 fn listen_stream(stream: &mut TcpStream, cache: LocationCache) {
     let handler = HttpHandler::new(cache);
-    loop {
-        match read_stream(1024, stream, &handler) {
-            ConnectionState::KeepAlive  => { continue; }
-            ConnectionState::Close      => {
-                log_info!("server", "Client connection closed");
-                break
-            }
-        }
-    }
+    read_stream(READ_BUFFER_SIZE, stream, &handler);
+    log_info!("server", "Client connection closed");
 }
 

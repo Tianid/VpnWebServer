@@ -51,8 +51,12 @@ The `resources/` directory **must remain alongside the binary**.
 | `--address` | `-a` | `127.0.0.1` | Bind address |
 | `--port` | `-p` | `9000` | Bind port |
 | `--log-level` | `-l` | `info` | `trace` \| `debug` \| `info` \| `warn` \| `error` \| `off` |
+| `--setup-autostart` | `-A` | — | Create XDG autostart entries, then exit; add `-a` to also start the server |
+| `--remove-autostart` | `-R` | — | Remove XDG autostart entries, then exit; add `-a` to also start the server |
 | `--help` | `-h` | — | Print usage and exit |
 | `--version` | `-V` | — | Print version and exit |
+
+The `-A` and `-R` flags can be combined with `-a` to configure autostart and immediately start the server in the same invocation.
 
 The log level can also be changed **at runtime** without restarting — use the dropdown in the browser log panel or send:
 
@@ -61,6 +65,43 @@ curl -X POST http://<host>:9000/api/config \
      -H 'Content-Type: application/json' \
      -d '{"log_level":"debug"}'
 ```
+
+---
+
+## Autostart (Raspberry Pi)
+
+Run once to create XDG autostart entries so haven and the VPN connect automatically at login.
+
+> **Run this from the directory that contains `resources/`** — the generated startup script captures the current working directory and the server depends on it to locate resource files.
+
+From an **extracted release directory**:
+```sh
+./haven -A -a 0.0.0.0 -p 9000
+```
+
+From a **source checkout** (workspace root):
+```sh
+./target/release/haven -A -a 0.0.0.0 -p 9000
+```
+
+This creates four files:
+
+| File | Purpose |
+|---|---|
+| `~/.local/bin/haven-autostart.sh` | Waits up to 60 s for network, then starts the haven server |
+| `~/.local/bin/haven-vpn-connect.sh` | Waits up to 90 s for internet, then runs `adguardvpn-cli connect` |
+| `~/.config/autostart/haven-server.desktop` | XDG entry — opens a terminal running the server script at login |
+| `~/.config/autostart/haven-vpn.desktop` | XDG entry — opens a terminal running the VPN connect script at login |
+
+To remove:
+
+```sh
+./haven -R                        # extracted release directory
+./target/release/haven -R         # source checkout
+```
+
+> Requires a desktop environment with XDG autostart support (e.g. LXDE on Pi OS Desktop).
+> A terminal emulator must be installed — detected in order: `x-terminal-emulator`, `lxterminal`, `xfce4-terminal`, `gnome-terminal`, `mate-terminal`, `konsole`, `xterm`.
 
 ---
 

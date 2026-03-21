@@ -1,18 +1,28 @@
 use crate::logger::LogLevel;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum AutostartAction {
+    Setup,
+    Remove,
+}
+
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    pub address:    String,
-    pub port:       u16,
-    pub log_level:  LogLevel,
+    pub address:            String,
+    pub port:               u16,
+    pub log_level:          LogLevel,
+    pub autostart_action:   Option<AutostartAction>,
+    pub address_specified:  bool,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            address:    "127.0.0.1".to_string(),
-            port:       9000,
-            log_level:  LogLevel::Info,
+            address:            "127.0.0.1".to_string(),
+            port:               9000,
+            log_level:          LogLevel::Info,
+            autostart_action:   None,
+            address_specified:  false,
         }
     }
 }
@@ -33,6 +43,12 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> ServerConfig {
             continue;
         }
         match arg.as_str() {
+            "-A" | "--setup-autostart" => {
+                config.autostart_action = Some(AutostartAction::Setup);
+            }
+            "-R" | "--remove-autostart" => {
+                config.autostart_action = Some(AutostartAction::Remove);
+            }
             "--address" | "-a" => {
                 if let Some(v) = iter.next() { apply_arg(&mut config, "--address", v.trim()); }
             }
@@ -59,6 +75,7 @@ fn apply_arg(config: &mut ServerConfig, key: &str, value: &str) {
         "--address" | "-a" => {
             if value.parse::<std::net::Ipv4Addr>().is_ok() {
                 config.address = value.to_string();
+                config.address_specified = true;
             } else {
                 eprintln!("[WARN] Invalid address '{}', using default '{}'", value, config.address);
             }
@@ -87,8 +104,13 @@ fn print_usage() {
            -a, --address <ADDR>      Bind address (default: 127.0.0.1)\n\
            -p, --port <PORT>         Bind port (default: 9000)\n\
            -l, --log-level <LEVEL>   Log level: trace|debug|info|warn|error|off (default: info)\n\
+           -A, --setup-autostart     Create XDG autostart entries and exit\n\
+           -R, --remove-autostart    Remove XDG autostart entries and exit\n\
            -h, --help                Print this help and exit\n\
-           -V, --version             Print version and exit\n"
+           -V, --version             Print version and exit\n\
+         \n\
+         Autostart flags may be combined with -a to configure autostart\n\
+         and immediately start the server in the same invocation.\n"
     );
 }
 
@@ -166,6 +188,47 @@ mod tests {
         let cfg = parse_args(args(&["--unknown", "value"]));
         assert_eq!(cfg.address, "127.0.0.1");
         assert_eq!(cfg.port,    9000);
+    }
+
+    #[test]
+    fn setup_autostart_long_flag() {
+        let cfg = parse_args(args(&["--setup-autostart"]));
+        assert_eq!(cfg.autostart_action, Some(AutostartAction::Setup));
+        assert!(!cfg.address_specified);
+    }
+
+    #[test]
+    fn setup_autostart_short_flag() {
+        let cfg = parse_args(args(&["-A"]));
+        assert_eq!(cfg.autostart_action, Some(AutostartAction::Setup));
+    }
+
+    #[test]
+    fn remove_autostart_long_flag() {
+        let cfg = parse_args(args(&["--remove-autostart"]));
+        assert_eq!(cfg.autostart_action, Some(AutostartAction::Remove));
+        assert!(!cfg.address_specified);
+    }
+
+    #[test]
+    fn remove_autostart_short_flag() {
+        let cfg = parse_args(args(&["-R"]));
+        assert_eq!(cfg.autostart_action, Some(AutostartAction::Remove));
+    }
+
+    #[test]
+    fn autostart_with_valid_address_sets_address_specified() {
+        let cfg = parse_args(args(&["-A", "-a", "0.0.0.0"]));
+        assert_eq!(cfg.autostart_action, Some(AutostartAction::Setup));
+        assert!(cfg.address_specified);
+        assert_eq!(cfg.address, "0.0.0.0");
+    }
+
+    #[test]
+    fn autostart_with_invalid_address_leaves_address_specified_false() {
+        let cfg = parse_args(args(&["-A", "-a", "not-an-ip"]));
+        assert_eq!(cfg.autostart_action, Some(AutostartAction::Setup));
+        assert!(!cfg.address_specified);
     }
 
     #[test]

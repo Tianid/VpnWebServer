@@ -3,6 +3,7 @@ mod location_parser;
 mod state_parser;
 pub mod location;
 pub mod location_cache;
+pub mod sysinfo;
 
 pub use location::Location;
 pub use location_cache::LocationCache;

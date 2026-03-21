@@ -37,12 +37,32 @@ impl ResponseBuilder for HttpResponseBuilder {
         let text = if let Some(text) = self.text { text } else { return String::new() };
 
         format!(
-            "HTTP/1.1 {} OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n{}",
+            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n{}",
             status_code,
+            reason_phrase(status_code),
             content_type,
             text.len(),
             text
         )
+    }
+}
+
+fn reason_phrase(code: u16) -> &'static str {
+    match code {
+        200 => "OK",
+        201 => "Created",
+        204 => "No Content",
+        301 => "Moved Permanently",
+        302 => "Found",
+        304 => "Not Modified",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        500 => "Internal Server Error",
+        503 => "Service Unavailable",
+        _   => "Unknown",
     }
 }
 
@@ -124,13 +144,23 @@ mod tests {
     }
 
     #[test]
-    fn build_404_uses_provided_status_code() {
+    fn build_404_uses_correct_reason_phrase() {
         let result = HttpResponseBuilder::new()
             .status_code(404)
             .content_type("text/plain")
             .text("Not Found")
             .build();
-        assert!(result.starts_with("HTTP/1.1 404 OK\r\n"));
+        assert!(result.starts_with("HTTP/1.1 404 Not Found\r\n"));
         assert!(result.ends_with("Not Found"));
+    }
+
+    #[test]
+    fn build_400_uses_correct_reason_phrase() {
+        let result = HttpResponseBuilder::new()
+            .status_code(400)
+            .content_type("text/plain")
+            .text("bad")
+            .build();
+        assert!(result.starts_with("HTTP/1.1 400 Bad Request\r\n"));
     }
 }

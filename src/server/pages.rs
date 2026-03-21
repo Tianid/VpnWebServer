@@ -1,12 +1,13 @@
 pub enum Page {
-    Index,
-    // Add new variants here as new HTML pages are created
+    Desktop,
+    Mobile,
 }
 
 impl Page {
     pub fn path(&self) -> &'static str {
         match self {
-            Page::Index => "resources/web_resources/html_pages/index.html",
+            Page::Desktop => "resources/web_resources/html_pages/index_desktop.html",
+            Page::Mobile  => "resources/web_resources/html_pages/index_mobile.html",
         }
     }
 }

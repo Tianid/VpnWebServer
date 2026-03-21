@@ -1,7 +1,7 @@
 # AGENTS.md — haven
 
 > Machine-readable architecture guide for AI agents and contributors.  
-> Updated after full redesign on 2026-03-09 (Phases 0–8 complete; Session 2 refactoring complete; Session 3 flexible page routing complete; Session 4 project renamed to `haven` + code ordering convention applied).  
+> Updated after full redesign on 2026-03-09 (Phases 0–8 complete; Session 2 refactoring complete; Session 3 flexible page routing complete; Session 4 project renamed to `haven` + code ordering convention applied; Session 9 autostart feature added; Session 12 log history added; Session 14 bug fixes + code quality pass; Session 15 new features: H-0013 /health, H-0014 periodic cache, H-0016 signal handler, H-0018 request logging, H-0019 rate limiting, H-0022 sysinfo panel).  
 > Update this file whenever the architecture changes.
 
 ---
@@ -38,19 +38,28 @@ haven/
 ├── resources/
 │   └── web_resources/
 │       ├── html_pages/
-│       │   └── index.html            # Single-page UI (served at GET /)
+│       │   ├── index_desktop.html    # Desktop UI (served at GET / for non-mobile UA)
+│       │   └── index_mobile.html     # Mobile UI (served at GET / for mobile UA)
 │       └── page_scripts/
-│           └── client.js             # Browser WebSocket client
+│           ├── client.js             # Shared WebSocket + state-machine logic
+│           ├── client_desktop.js     # Desktop layout interactions
+│           └── client_mobile.js      # Mobile layout interactions
 ├── src/
 │   ├── main.rs                       # Entry point
 │   ├── config/                       # CLI argument parsing
 │   │   ├── mod.rs
-│   │   └── args.rs                   # ServerConfig, parse_args()
+│   │   └── args.rs                   # ServerConfig, AutostartAction, parse_args()
+│   ├── autostart/                    # XDG autostart setup / removal
+│   │   ├── mod.rs                    # pub fn run(action, cfg) — dispatch + shared resolve_home()
+│   │   ├── terminal.rs               # Terminal emulator detection
+│   │   ├── setup.rs                  # Create scripts + .desktop files
+│   │   └── remove.rs                 # Remove autostart files
 │   ├── core/                         # VPN business logic (CLI invocations)
 │   │   ├── mod.rs                    # Public API + CoreState/CoreError/CoreResult
 │   │   ├── commands.rs               # std::process::Command wrappers
 │   │   ├── location.rs               # Location struct
-│   │   ├── location_cache.rs         # Arc<RwLock<>> background-refresh cache
+│   │   ├── location_cache.rs         # Arc<RwLock<>> background-refresh + periodic-refresh cache
+│   │   ├── sysinfo.rs                # CPU temp / uptime / free-memory from /sys and /proc
 │   │   ├── location_parser.rs        # Parse adguardvpn-cli list-locations output
 │   │   └── state_parser.rs           # Parse adguardvpn-cli status output
 │   ├── logger/                       # Levelled logging + broadcast channel
@@ -58,11 +67,11 @@ haven/
 │   │   └── broadcast.rs              # MPMC log-line broadcast to WS subscribers
 │   ├── server/                       # TCP listener + HTTP/WS dispatch
 │   │   ├── mod.rs                    # start(), connection thread loop
-│   │   ├── connection_state.rs       # enum ConnectionState { KeepAlive, Close }
+│   │   ├── connection_state.rs       # enum ConnectionState { Close }
 │   │   ├── request_handler.rs        # trait RequestHandler
 │   │   ├── reader.rs                 # read_stream()
 │   │   ├── http_handler.rs           # struct HttpHandler (holds cache)
-│   │   ├── pages.rs                  # enum Page — URL→HTML file path mapping
+│   │   ├── pages.rs                  # enum Page { Desktop, Mobile } — URL→HTML file path mapping
 │   │   ├── router.rs                 # route(): GET/POST dispatch, /api/config
 │   │   ├── sender.rs                 # send(stream, ResponseBuilder)
 │   │   └── ws/
@@ -123,6 +132,8 @@ cargo test
 | `--address` | `-a` | `127.0.0.1` | Bind address |
 | `--port` | `-p` | `9000` | Bind port |
 | `--log-level` | `-l` | `info` | Log level: `trace`\|`debug`\|`info`\|`warn`\|`error`\|`off` |
+| `--setup-autostart` | `-A` | — | Create XDG autostart entries, then exit (or start server if `-a` also given) |
+| `--remove-autostart` | `-R` | — | Remove XDG autostart entries, then exit (or start server if `-a` also given) |
 | `--help` | `-h` | — | Print usage and exit |
 | `--version` | `-V` | — | Print version and exit |
 
@@ -139,6 +150,7 @@ cargo test
 | `regex` | 1 | Parse `adguardvpn-cli list-locations` tabular output |
 | `base64` | 0.22.1 | Encode WebSocket `Sec-WebSocket-Accept` key (legacy path) |
 | `sha1` | 0.10.6 | SHA-1 hash for WebSocket handshake (legacy path) |
+| `ctrlc` | 3 | SIGTERM / SIGINT handler for graceful shutdown |
 
 No async runtime — the server uses OS threads exclusively.
 
@@ -151,11 +163,18 @@ No async runtime — the server uses OS threads exclusively.
 Startup sequence:
 
 ```rust
-logger::init_time_offset();
 let cfg = config::args::parse_args(std::env::args());
+// autostart action (if present) runs first; exits if no address given
+if let Some(ref action) = cfg.autostart_action {
+    autostart::run(action, &cfg);
+    if !cfg.address_specified { std::process::exit(0); }
+}
+logger::init_time_offset();
 logger::set_level(cfg.log_level);
+ctrlc::set_handler(|| { log_info!("server", "Shutdown signal received, exiting"); process::exit(0); });
 let cache = core::LocationCache::new();
 cache.refresh_in_background();
+cache.refresh_periodically(Duration::from_secs(30 * 60));
 server::start(cfg, cache);
 ```
 
@@ -164,7 +183,12 @@ server::start(cfg, cache);
 ### 5.2 `config/args.rs`
 
 ```rust
-pub struct ServerConfig { pub address: String, pub port: u16, pub log_level: LogLevel }
+pub enum AutostartAction { Setup, Remove }
+pub struct ServerConfig {
+    pub address: String, pub port: u16, pub log_level: LogLevel,
+    pub autostart_action: Option<AutostartAction>,
+    pub address_specified: bool,
+}
 pub fn parse_args<I: IntoIterator<Item=String>>(args: I) -> ServerConfig
 ```
 
@@ -172,10 +196,61 @@ pub fn parse_args<I: IntoIterator<Item=String>>(args: I) -> ServerConfig
 - Supports `--key value`, `-k value`, and `--key=value` forms.
 - Invalid values are logged to stderr and the default is kept.
 - `--help`/`-h` prints usage and exits; `--version`/`-V` prints version and exits.
+- `-A`/`--setup-autostart` sets `autostart_action = Some(Setup)`.
+- `-R`/`--remove-autostart` sets `autostart_action = Some(Remove)`.
+- `address_specified` is set to `true` only when `-a`/`--address` is parsed successfully.
 
 ---
 
-### 5.3 `logger/`
+### 5.3 `autostart/`
+
+#### `mod.rs`
+
+```rust
+pub fn run(action: &AutostartAction, cfg: &ServerConfig)
+```
+
+Dispatches to `setup::setup(cfg)` or `remove::remove()`. On error: prints to stderr and exits 1.
+
+Also provides private helpers shared by both submodules:
+- `resolve_home() -> Result<String, String>` — `$HOME` env var, then `/etc/passwd` fallback
+- `home_from_passwd() -> Result<String, String>` — reads `/etc/passwd`, matches current UID
+- `getuid() -> u32` — safe wrapper around `extern "C" fn getuid()`
+
+#### `terminal.rs`
+
+```rust
+pub struct Terminal { pub name: String, pub exec_flag: String }
+pub fn detect() -> Option<Terminal>
+```
+
+Probes `which` for each candidate in order: `x-terminal-emulator` (`-e`), `lxterminal` (`-e`),
+`xfce4-terminal` (`-e`), `gnome-terminal` (`--`), `mate-terminal` (`-e`), `konsole` (`-e`), `xterm` (`-e`).
+
+#### `setup.rs`
+
+`pub fn setup(cfg: &ServerConfig) -> Result<(), String>`
+
+Creates four files using the current working directory as the project root:
+
+| File | Purpose |
+|---|---|
+| `~/.local/bin/haven-autostart.sh` | Waits up to 60 s for network (`ip route get 8.8.8.8`, `$SECONDS`-based deadline, polls every 3 s), then `cd $PROJECT_ROOT && exec haven …` |
+| `~/.local/bin/haven-vpn-connect.sh` | Waits up to 90 s for internet connectivity (ping `8.8.8.8`, `$SECONDS`-based deadline, polls every 3 s), then `adguardvpn-cli connect` |
+| `~/.config/autostart/haven-server.desktop` | XDG entry: opens terminal running server script |
+| `~/.config/autostart/haven-vpn.desktop` | XDG entry: opens terminal running VPN connect script |
+
+Both scripts are set `chmod 755`. `$HOME` resolved via `$HOME` env var, then `/etc/passwd` fallback.
+
+#### `remove.rs`
+
+`pub fn remove() -> Result<(), String>`
+
+Removes the same four files (ignores `NotFound`). Prints each removed path; if nothing was removed, prints "Autostart is not configured."
+
+---
+
+### 5.4 `logger/`
 
 #### `mod.rs`
 
@@ -197,17 +272,22 @@ pub fn parse_args<I: IntoIterator<Item=String>>(args: I) -> ServerConfig
 #### `broadcast.rs`
 
 ```rust
+pub const HISTORY_CAPACITY: usize = 1000
 pub struct LogLine { pub timestamp, level, tag: String, pub pid: u32, pub tid: u64, pub message: String }
-pub fn subscribe() -> Receiver<LogLine>    // adds Sender to SUBSCRIBERS (capacity 1024)
-pub fn broadcast(line: &LogLine)          // fans out to all subscribers
+pub fn subscribe_with_history() -> (Receiver<LogLine>, Vec<LogLine>)  // atomic: register subscriber + snapshot history
+pub fn broadcast(line: &LogLine)                                      // fans out to all subscribers + pushes to ring buffer
 ```
 
-`SUBSCRIBERS` is a `Mutex<Vec<Sender<LogLine>>>`.  Dead senders are pruned
-on every broadcast.
+`STATE` is a `Mutex<BroadcastState>` holding both the subscriber senders and the
+history ring buffer (`VecDeque<LogLine>`, capacity `HISTORY_CAPACITY`).  Both
+subscriber fan-out and history push happen under the same lock.  `subscribe_with_history()`
+registers the new sender and captures the history snapshot atomically — no line can be
+missed or duplicated between replay and live stream.  Dead senders are pruned on every
+broadcast.
 
 ---
 
-### 5.4 `core/`
+### 5.5 `core/`
 
 All public functions are **synchronous and blocking**.
 
@@ -218,9 +298,9 @@ All public functions are **synchronous and blocking**.
 | `connect(location: Option<String>)` | `adguardvpn-cli connect -l <city>` (or fastest if `None`) |
 | `disconnect()` | `adguardvpn-cli disconnect` |
 | `restart()` | `shutdown -r now` |
-| `status() → CoreResult<CoreState>` | `adguardvpn-cli status` |
+| `status() → CoreResult<(CoreState, Option<String>)>` | `adguardvpn-cli status` |
 | `list_locations() → CoreResult<Vec<Location>>` | `adguardvpn-cli list-locations 100` |
-| `reconnect_wifi() → CoreResult<()>` | `nmcli` SSID detection + `nmcli connection up id <ssid>` |
+| `reconnect_wifi() → CoreResult<()>` | `nmcli` SSID detection + `nmcli connection up id <ssid> --ask` |
 
 `reconnect_wifi()` polls `get_ssid()` for up to 10 s (500 ms interval) to
 confirm the SSID is back after issuing the reconnect command.
@@ -249,12 +329,13 @@ malformed lines, parses ping as `i32` (fallback `-1`).
 
 #### `location_cache.rs`
 
-`LocationCache` wraps `Arc<RwLock<Vec<Location>>>` + `Arc<RwLock<Option<Instant>>>`.
+`LocationCache` wraps `Arc<RwLock<Vec<Location>>>`.
 
 | Method | Description |
 |---|---|
 | `new()` | Returns empty cache |
-| `refresh_in_background()` | Spawns a thread: calls `core::list_locations()`, writes result, loops |
+| `refresh_in_background()` | Spawns a thread: calls `core::list_locations()` once, writes result |
+| `refresh_periodically(interval)` | Spawns a thread: sleeps `interval`, calls `list_locations()`, loops |
 | `get()` | Returns a snapshot clone (non-blocking read) |
 
 `LocationCache` is `Clone` — the `Arc` is cloned, not the data.
@@ -267,7 +348,7 @@ priority order: `"reconnecting"` → `Reconnecting`; `"disconnected"` →
 
 ---
 
-### 5.5 `server/`
+### 5.6 `server/`
 
 #### Connection lifecycle
 
@@ -276,16 +357,15 @@ TcpListener::incoming()
   └─ thread::spawn
        └─ listen_stream(&mut TcpStream, LocationCache)
             HttpHandler { cache }
-            loop:
-              read_stream(1024, HttpHandler)
-              → parse HTTP bytes → HttpRequest
-              → router::route(stream, req, cache)
-                    GET /            → serve Page::Index.path()
-                    GET /resources/* → serve static file
-                    GET /ws          → ws::handler::handle()   ← WebSocket loop
-                    POST /api/config → set logger level
-                    *                → 404
-              → ConnectionState::Close → break
+            read_stream(READ_BUFFER_SIZE=4096, HttpHandler)
+            → parse HTTP bytes → HttpRequest
+            → router::route(stream, req, cache)
+                  GET /            → is_mobile_ua() → Page::Mobile or Page::Desktop
+                  GET /resources/* → serve static file
+                  GET /ws          → ws::handler::handle()   ← WebSocket loop
+                  POST /api/config → set logger level
+                  *                → 404
+            → ConnectionState::Close
 ```
 
 #### `request_handler.rs`
@@ -310,20 +390,23 @@ Parses raw bytes into `HttpRequest`, delegates to `router::route()`.
 #### `pages.rs`
 
 ```rust
-pub enum Page { Index }
+pub enum Page { Desktop, Mobile }
 impl Page { pub fn path(&self) -> &'static str }
 ```
 
-Single source of truth for URL→HTML file path mapping.
+Single source of truth for URL→HTML file path mapping. `Desktop` maps to `index_desktop.html`; `Mobile` maps to `index_mobile.html`.
 Add a variant + one match arm here to serve a new HTML page — no other files need to change.
 
 #### `router.rs`
 
 `route(stream, req, cache) → ConnectionState`
 
-- `GET /` → `Page::Index.path()` (resolved via `pages::Page`)
+Logs every request at `Debug` level before dispatch (`log_debug!("http", "{:?} {}", method, path)`).
+
+- `GET /` → `is_mobile_ua(req)` → `Page::Mobile.path()` or `Page::Desktop.path()`
 - `GET /resources/*` → serve file at path (strips leading `/`), content-type from extension
 - `GET /ws` → `ws::handler::handle()`
+- `GET /health` → JSON `{"status":"ok","vpn":"<state>","uptime_s":N}` (calls `server::uptime_secs()`)
 - `POST /api/config` → JSON body `{ "log_level": "debug" }` → `logger::set_level()`
 - All others → `404 Not Found`
 
@@ -332,10 +415,17 @@ Add a variant + one match arm here to serve a new HTML page — no other files n
 `handle(stream, req, cache) → ConnectionState`
 
 1. Performs tungstenite WS handshake.
-2. Sends initial `StatusUpdate`, `LocationList`, `LogLevelChanged` to the new client.
-3. Calls `logger::broadcast::subscribe()` and enters the run loop.
-4. Run loop: select over tungstenite messages and log-broadcast channel;
+2. Calls `logger::broadcast::subscribe_with_history()` — atomically subscribes and
+   captures a history snapshot (no race between replay and live stream).
+3. Sends initial state to the new client **in this order**:
+   `StatusUpdate` → `LocationList` → history snapshot (`LogLine` × N) → `LogLevelChanged`.
+4. Enters the run loop: polls tungstenite messages and log-broadcast channel;
    dispatches `ClientMessage` variants to `core::*`; sends `ServerMessage` back.
+
+**Rate limiting:** `Connect` and `Disconnect` share a process-global
+`static DESTRUCTIVE_COOLDOWN: Mutex<Option<Instant>>`. `try_acquire_cooldown()` checks
+and stamps atomically (single lock scope) — concurrent sessions cannot bypass the limit.
+Cooldown is stamped before the blocking command runs; duration is 2 seconds.
 
 #### `ws/messages.rs`
 
@@ -343,7 +433,7 @@ See §6 for the full protocol.  Both enums use `#[serde(tag = "type")]`.
 
 ---
 
-### 5.6 `requests/`
+### 5.7 `requests/`
 
 | File | Role |
 |---|---|
@@ -352,16 +442,16 @@ See §6 for the full protocol.  Both enums use `#[serde(tag = "type")]`.
 
 ---
 
-### 5.7 `responses/`
+### 5.8 `responses/`
 
 | File | Role |
 |---|---|
 | `response_builder.rs` | `trait ResponseBuilder { fn build(self) → String }` |
-| `http_response_builder.rs` | `HTTP/1.1 <code> OK\r\nContent-Type: …\r\nContent-Length: …\r\n\r\n<body>` |
+| `http_response_builder.rs` | `HTTP/1.1 <code> <reason>\r\nContent-Type: …\r\nContent-Length: …\r\n\r\n<body>` — reason phrase mapped by `reason_phrase(code)` |
 
 ---
 
-### 5.8 `utils/`
+### 5.9 `utils/`
 
 | File | Role |
 |---|---|
@@ -378,12 +468,13 @@ All messages are JSON objects with a `"type"` discriminant (`#[serde(tag = "type
 | type | Extra fields | Description |
 |---|---|---|
 | `Status` | — | Request current VPN state |
-| `Connect` | `location?: string` | Connect; omit or null for fastest |
-| `Disconnect` | — | Disconnect from VPN |
+| `Connect` | `location?: string` | Connect; omit or null for fastest. Rate-limited (2 s global cooldown). |
+| `Disconnect` | — | Disconnect from VPN. Rate-limited (2 s global cooldown). |
 | `ReconnectWifi` | — | Reconnect to current Wi-Fi SSID |
 | `Restart` | — | `shutdown -r now` |
 | `RefreshLocations` | — | Re-run `list-locations` and broadcast result |
 | `SetLogLevel` | `level: string` | Change runtime log level |
+| `GetSystemInfo` | — | Request current CPU temp / uptime / free memory |
 
 ### Server → Client (`ServerMessage`)
 
@@ -393,7 +484,8 @@ All messages are JSON objects with a `"type"` discriminant (`#[serde(tag = "type
 | `LocationList` | `locations: Location[]` | Full location list (sorted by ping) |
 | `LogLine` | `timestamp, level, tag: string; pid: u32; tid: u64; message: string` | Live log line |
 | `LogLevelChanged` | `level: string` | Confirms a level change |
-| `Error` | `code, message: string` | Operation error |
+| `SystemInfo` | `cpu_temp_c: f32\|null, uptime_s: u64, mem_free_kb: u64` | Response to `GetSystemInfo` |
+| `Error` | `code, message: string` | Operation error (`RateLimit` code for cooldown violations) |
 
 ### WS framing
 
@@ -403,8 +495,11 @@ Handled entirely by **tungstenite 0.21** — no manual frame parsing.
 
 ## 7. Frontend (Web UI)
 
-**Files:** `resources/web_resources/html_pages/index.html`,
-`resources/web_resources/page_scripts/client.js`
+**Files:** `resources/web_resources/html_pages/index_desktop.html` (desktop),
+`resources/web_resources/html_pages/index_mobile.html` (mobile),
+`resources/web_resources/page_scripts/client.js` (shared logic),
+`resources/web_resources/page_scripts/client_desktop.js`,
+`resources/web_resources/page_scripts/client_mobile.js`
 
 Served as static files over HTTP. No build step — plain HTML + vanilla JavaScript.
 
@@ -422,6 +517,10 @@ Served as static files over HTTP. No build step — plain HTML + vanilla JavaScr
 | Toggle button | `toggleBtn` | Connect (optional city) / Disconnect / `…` disabled |
 | Wi-Fi button | `wifiBtn` | Sends `ReconnectWifi` |
 | Restart button | `restartBtn` | Sends `Restart` |
+| System info panel | `sysInfoPanel` | `<details>` — collapsible; sends `GetSystemInfo` on open |
+| Sysinfo temp | `sysInfoTemp` | CPU temperature display |
+| Sysinfo uptime | `sysInfoUptime` | System uptime display |
+| Sysinfo memory | `sysInfoMem` | Free memory display |
 | Log panel | `logPanel` | `<details>` — collapsible |
 | Log level select | `logLevelSelect` | Sends `SetLogLevel` on change |
 | Log output | `logOutput` | Monospace; max 500 lines; auto-scroll |
@@ -460,13 +559,13 @@ and `shutdown`.
 | Command | Trigger |
 |---|---|
 | `adguardvpn-cli connect -l <city>` | `ClientMessage::Connect { location: Some(city) }` |
-| `adguardvpn-cli connect` (fastest) | `ClientMessage::Connect { location: None }` |
+| `adguardvpn-cli connect --fastest` | `ClientMessage::Connect { location: None }` |
 | `adguardvpn-cli disconnect` | `ClientMessage::Disconnect` |
 | `adguardvpn-cli status` | `ClientMessage::Status` + after `Connect`/`Disconnect` |
 | `adguardvpn-cli list-locations 100` | `ClientMessage::RefreshLocations` + background cache refresh |
 | `shutdown -r now` | `ClientMessage::Restart` |
 | `sh -c "nmcli -t -f active,ssid dev wifi \| grep '^yes:' \| cut -d':' -f2-"` | `ClientMessage::ReconnectWifi` (step 1: get SSID) |
-| `nmcli connection up id <ssid>` | `ClientMessage::ReconnectWifi` (step 2: reconnect) |
+| `nmcli connection up id <ssid> --ask` | `ClientMessage::ReconnectWifi` (step 2: reconnect) |
 
 ---
 
@@ -474,9 +573,7 @@ and `shutdown`.
 
 | # | Location | Issue |
 |---|---|---|
-| 1 | `server/connection_state.rs` | `KeepAlive` variant is defined and matched but never returned by any current code path (HTTP responses always close); future keep-alive support would use it |
-| 2 | `server/ws/handler.rs` | `send_status()` always sends `location: None` — connected location is not retrieved from `adguardvpn-cli status` output |
-| 3 | General | Blocking `std::process::Command` calls run on the connection thread — long VPN commands stall WS message processing for that connection |
+| 1 | General | Blocking `std::process::Command` calls run on the connection thread — long VPN commands stall WS message processing for that connection |
 
 ---
 
@@ -491,7 +588,7 @@ and `shutdown`.
   `{"log_level":"debug"}` — no restart needed.
 - **Adding a new cross-compilation target:** Add one entry to the matrix in each
   workflow YAML; add the corresponding linker to `.cargo/config.toml`.
-- **Running tests:** `cargo test` — 69 unit tests across 9 modules.
+- **Running tests:** `cargo test` — 106 unit tests across 10 modules.
 - **Adding a new HTML page at a new GET route:** (1) add a variant to `enum Page` in `server/pages.rs` with its `path()` match arm; (2) add one match arm in `router::route()` in `server/router.rs` — no other files need to change.
 - **Cross-compiling for Raspberry Pi:**
   ```sh

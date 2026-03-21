@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::net::TcpStream;
-use std::sync::mpsc::Receiver;
-use std::time::Duration;
+use std::sync::{mpsc::Receiver, Mutex};
+use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use sha1::{Digest, Sha1};
@@ -14,6 +14,10 @@ use crate::requests::http_request::HttpRequest;
 use crate::server::connection_state::ConnectionState;
 
 use super::messages::{ClientMessage, ServerMessage};
+
+const RATE_LIMIT_DURATION: Duration = Duration::from_secs(2);
+
+static DESTRUCTIVE_COOLDOWN: Mutex<Option<Instant>> = Mutex::new(None);
 
 pub fn handle(stream: &mut TcpStream, req: &HttpRequest, cache: LocationCache) -> ConnectionState {
     if req.headers.get("Upgrade").map(|v| v.as_str()) != Some("websocket") {
@@ -58,9 +62,12 @@ pub fn handle(stream: &mut TcpStream, req: &HttpRequest, cache: LocationCache) -
     }
 
     let mut ws = WebSocket::from_raw_socket(ws_stream, Role::Server, None);
-    let log_rx = logger::subscribe();
+    let (log_rx, history) = logger::broadcast::subscribe_with_history();
 
     send_initial(&mut ws, &cache);
+    send_log_history(&mut ws, &history);
+    let level = format!("{:?}", logger::current_level()).to_lowercase();
+    let _ = send_msg(&mut ws, &ServerMessage::LogLevelChanged { level });
     log_info!("ws", "WebSocket session started for {}", peer);
 
     run_loop(&mut ws, &log_rx, &cache);
@@ -111,18 +118,34 @@ fn run_loop(
     }
 }
 
-fn dispatch(ws: &mut WebSocket<TcpStream>, msg: ClientMessage, cache: &LocationCache) {
+fn dispatch(
+    ws: &mut WebSocket<TcpStream>,
+    msg: ClientMessage,
+    cache: &LocationCache,
+) {
     log_debug!("ws", "Client message: {:?}", msg);
     match msg {
         ClientMessage::Status => send_status(ws),
-        ClientMessage::Connect { location } => match core::connect(location) {
-            Ok(()) => send_status(ws),
-            Err(e) => send_error(ws, "CommandFailed", &e.to_string()),
-        },
-        ClientMessage::Disconnect => match core::disconnect() {
-            Ok(()) => send_status(ws),
-            Err(e) => send_error(ws, "CommandFailed", &e.to_string()),
-        },
+        ClientMessage::Connect { location } => {
+            if !try_acquire_cooldown() {
+                send_error(ws, "RateLimit", "Command cooldown active, wait 2 seconds");
+                return;
+            }
+            match core::connect(location) {
+                Ok(()) => send_status(ws),
+                Err(e) => send_error(ws, "CommandFailed", &e.to_string()),
+            }
+        }
+        ClientMessage::Disconnect => {
+            if !try_acquire_cooldown() {
+                send_error(ws, "RateLimit", "Command cooldown active, wait 2 seconds");
+                return;
+            }
+            match core::disconnect() {
+                Ok(()) => send_status(ws),
+                Err(e) => send_error(ws, "CommandFailed", &e.to_string()),
+            }
+        }
         ClientMessage::ReconnectWifi => match core::reconnect_wifi() {
             Ok(()) => send_status(ws),
             Err(e) => send_error(ws, "CommandFailed", &e.to_string()),
@@ -144,15 +167,35 @@ fn dispatch(ws: &mut WebSocket<TcpStream>, msg: ClientMessage, cache: &LocationC
             }
             None => send_error(ws, "InvalidLevel", &format!("Unknown log level: {}", level)),
         },
+        ClientMessage::GetSystemInfo => {
+            let info = core::sysinfo::get();
+            let _ = send_msg(ws, &ServerMessage::SystemInfo {
+                cpu_temp_c:   info.cpu_temp_c,
+                uptime_s:     info.uptime_s,
+                mem_free_kb:  info.mem_free_kb,
+                mem_total_kb: info.mem_total_kb,
+            });
+        }
     }
+}
+
+fn try_acquire_cooldown() -> bool {
+    let mut guard = DESTRUCTIVE_COOLDOWN.lock().unwrap();
+    if is_rate_limited(*guard) {
+        return false;
+    }
+    *guard = Some(Instant::now());
+    true
+}
+
+fn is_rate_limited(last: Option<Instant>) -> bool {
+    last.map(|t| t.elapsed() < RATE_LIMIT_DURATION).unwrap_or(false)
 }
 
 fn send_initial(ws: &mut WebSocket<TcpStream>, cache: &LocationCache) {
     send_status(ws);
     let locs = cache.get();
     let _ = send_msg(ws, &ServerMessage::LocationList { locations: locs });
-    let level = format!("{:?}", logger::current_level()).to_lowercase();
-    let _ = send_msg(ws, &ServerMessage::LogLevelChanged { level });
 }
 
 fn send_status(ws: &mut WebSocket<TcpStream>) {
@@ -166,6 +209,15 @@ fn send_status(ws: &mut WebSocket<TcpStream>) {
     let _ = send_msg(ws, &ServerMessage::StatusUpdate { state, location });
 }
 
+fn send_log_history(ws: &mut WebSocket<TcpStream>, history: &[logger::LogLine]) {
+    for line in history {
+        let msg = ServerMessage::from_log_line(line);
+        if send_msg(ws, &msg).is_err() {
+            return;
+        }
+    }
+}
+
 fn send_error(ws: &mut WebSocket<TcpStream>, code: &str, message: &str) {
     let _ = send_msg(
         ws,
@@ -176,20 +228,43 @@ fn send_error(ws: &mut WebSocket<TcpStream>, code: &str, message: &str) {
     );
 }
 
-fn send_msg(ws: &mut WebSocket<TcpStream>, msg: &ServerMessage) -> Result<(), ()> {
-    match serde_json::to_string(msg) {
-        Ok(json) => ws.send(Message::Text(json)).map_err(|e| {
-            log_error!("ws", "WS send error: {}", e);
-        }),
-        Err(e) => {
-            log_error!("ws", "Serialize error: {}", e);
-            Err(())
-        }
-    }
+fn send_msg(ws: &mut WebSocket<TcpStream>, msg: &ServerMessage) -> Result<(), tungstenite::Error> {
+    let json = serde_json::to_string(msg).map_err(|e| {
+        log_error!("ws", "Serialize error: {}", e);
+        tungstenite::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    })?;
+    ws.send(Message::Text(json)).inspect_err(|e| {
+        log_error!("ws", "WS send error: {}", e);
+    })
 }
 
 fn generate_accept_key(key: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(format!("{}258EAFA5-E914-47DA-95CA-C5AB0DC85B11", key).as_bytes());
     STANDARD.encode(hasher.finalize())
+}
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_rate_limited_none_returns_false() {
+        assert!(!is_rate_limited(None));
+    }
+
+    #[test]
+    fn is_rate_limited_old_instant_returns_false() {
+        let old = Some(Instant::now() - Duration::from_secs(3));
+        assert!(!is_rate_limited(old));
+    }
+
+    #[test]
+    fn is_rate_limited_recent_instant_returns_true() {
+        let recent = Some(Instant::now());
+        assert!(is_rate_limited(recent));
+    }
 }

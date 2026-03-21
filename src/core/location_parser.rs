@@ -1,9 +1,12 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 
 use crate::core::location::Location;
 
+static SPLITTER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s{2,}").unwrap());
+
 pub fn parse_locations(output: &str) -> Vec<Location> {
-    let re = Regex::new(r"\s{2,}").unwrap();
     output
         .lines()
         .filter(|l| {
@@ -14,7 +17,7 @@ pub fn parse_locations(output: &str) -> Vec<Location> {
                 && b[2].is_ascii_whitespace()
         })
         .filter_map(|line| {
-            let parts: Vec<&str> = re.split(line.trim()).collect();
+            let parts: Vec<&str> = SPLITTER.split(line.trim()).collect();
             if parts.len() != 4 {
                 log_warn!("core", "location_parser: unexpected column count {} in {:?}", parts.len(), line);
                 return None;

@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::net::TcpStream;
 
-use crate::core::LocationCache;
+use crate::core::{self, CoreState, LocationCache};
 use crate::logger;
 use crate::requests::http_method::HttpMethod;
 use crate::requests::http_request::HttpRequest;
@@ -14,9 +14,15 @@ use super::pages::Page;
 
 pub fn route(stream: &mut TcpStream, req: &HttpRequest, cache: LocationCache) -> ConnectionState {
     let path = req.path.as_str();
+    log_debug!("http", "{:?} {}", req.method, path);
     match &req.method {
         HttpMethod::GET => match path {
-            "/"   => serve_file(stream, Page::Index.path(), "text/html"),
+            "/" => {
+                let ua = req.headers.get("User-Agent").map(String::as_str).unwrap_or("");
+                let page = if is_mobile_ua(ua) { Page::Mobile } else { Page::Desktop };
+                serve_file(stream, page.path(), "text/html")
+            }
+            "/health" => handle_health(stream),
             "/ws" => ws_handler::handle(stream, req, cache),
             p if p.starts_with("/resources/") => {
                 let file_path = p.trim_start_matches('/');
@@ -75,6 +81,21 @@ fn handle_api_config(stream: &mut TcpStream, req: &HttpRequest) -> ConnectionSta
     }
 }
 
+fn handle_health(stream: &mut TcpStream) -> ConnectionState {
+    let (state, _) = core::status().unwrap_or((CoreState::Disconnected, None));
+    let vpn = match state {
+        CoreState::Connected    => "connected",
+        CoreState::Disconnected => "disconnected",
+        CoreState::Reconnecting => "reconnecting",
+    };
+    let body = format!(
+        r#"{{"status":"ok","vpn":"{}","uptime_s":{}}}"#,
+        vpn,
+        super::uptime_secs()
+    );
+    sender::send(stream, ok_json(&body))
+}
+
 fn serve_file(stream: &mut TcpStream, path: &str, ct: &str) -> ConnectionState {
     match read_content(path) {
         Some(content) => sender::send(
@@ -86,6 +107,11 @@ fn serve_file(stream: &mut TcpStream, path: &str, ct: &str) -> ConnectionState {
             sender::send(stream, not_found())
         }
     }
+}
+
+fn is_mobile_ua(ua: &str) -> bool {
+    ua.contains("Mobile") || ua.contains("Android") || ua.contains("iPhone")
+        || ua.contains("iPad") || ua.contains("iPod")
 }
 
 fn content_type(path: &str) -> &'static str {
@@ -114,6 +140,22 @@ fn ok_json(body: &str) -> HttpResponseBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_mobile_ua_desktop_returns_false() {
+        assert!(!is_mobile_ua("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"));
+        assert!(!is_mobile_ua("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"));
+        assert!(!is_mobile_ua(""));
+    }
+
+    #[test]
+    fn is_mobile_ua_mobile_keyword_returns_true() {
+        assert!(is_mobile_ua("Mozilla/5.0 (Linux; Android 14) Mobile"));
+        assert!(is_mobile_ua("Mozilla/5.0 (Linux; Android 14; Pixel 8)"));
+        assert!(is_mobile_ua("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"));
+        assert!(is_mobile_ua("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)"));
+        assert!(is_mobile_ua("Mozilla/5.0 (iPod touch; CPU iPhone OS 17_0 like Mac OS X)"));
+    }
 
     #[test]
     fn content_type_js() {

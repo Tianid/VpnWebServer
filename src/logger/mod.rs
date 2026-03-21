@@ -1,10 +1,11 @@
 pub mod broadcast;
-pub use broadcast::{subscribe, LogLine};
+pub use broadcast::LogLine;
 
 use std::cell::Cell;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use time::format_description;
+use time::format_description::BorrowedFormatItem;
 use time::{OffsetDateTime, UtcOffset};
 
 const DATE_FORMAT: &str = "[year]-[month]-[day] [hour]:[minute]:[second]:[subsecond digits:3]";
@@ -59,6 +60,9 @@ pub fn current_level() -> LogLevel {
 }
 
 static CACHED_OFFSET: OnceLock<UtcOffset> = OnceLock::new();
+
+static CACHED_FORMAT: LazyLock<Vec<BorrowedFormatItem<'static>>> =
+    LazyLock::new(|| format_description::parse(DATE_FORMAT).unwrap_or_default());
 
 pub fn init_time_offset() {
     let offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
@@ -129,8 +133,7 @@ fn current_thread_id() -> u64 {
 fn get_time() -> String {
     let offset = CACHED_OFFSET.get().copied().unwrap_or(UtcOffset::UTC);
     let now = OffsetDateTime::now_utc().to_offset(offset);
-    let fmt = format_description::parse(DATE_FORMAT).unwrap_or_default();
-    now.format(&fmt).unwrap_or_default()
+    now.format(&*CACHED_FORMAT).unwrap_or_default()
 }
 
 fn level_icon(level: LogLevel) -> &'static str {

@@ -20,10 +20,17 @@ const i18n = {
         location_ping:       'ms',
         lang_toggle:         'RU',
         loading_locations:   'Loading locations...',
+        no_results:          'No locations match the search.',
         error_ws:            'Connection to server lost. Reconnecting...',
         log_panel_title:     'Server Log',
         log_clear:           'Clear',
         location_panel_title:'Locations',
+        sysinfo_panel_title: 'System Info',
+        sysinfo_refresh:     'Refresh',
+        sysinfo_cpu:         'CPU Temp',
+        sysinfo_uptime:      'Uptime',
+        sysinfo_mem_free:    'Memory',
+        sysinfo_na:          'N/A',
         confirm_wifi_title:  'Reconnect WiFi',
         confirm_wifi_msg:    'Reconnect the device to the current Wi-Fi network?',
         confirm_restart_title:'Restart Device',
@@ -48,10 +55,17 @@ const i18n = {
         location_ping:       'мс',
         lang_toggle:         'EN',
         loading_locations:   'Загрузка локаций...',
+        no_results:          'Нет совпадений по запросу.',
         error_ws:            'Соединение с сервером потеряно. Переподключение...',
         log_panel_title:     'Лог сервера',
         log_clear:           'Очистить',
         location_panel_title:'Локации',
+        sysinfo_panel_title: 'Инфо о системе',
+        sysinfo_refresh:     'Обновить',
+        sysinfo_cpu:         'Температура CPU',
+        sysinfo_uptime:      'Время работы',
+        sysinfo_mem_free:    'Память',
+        sysinfo_na:          'Нет данных',
         confirm_wifi_title:  'Переподключить WiFi',
         confirm_wifi_msg:    'Переподключить устройство к текущей Wi-Fi сети?',
         confirm_restart_title:'Перезагрузка',
@@ -96,6 +110,13 @@ function applyTranslations() {
     if (logClear) logClear.textContent = '\uD83D\uDDD1 ' + tr('log_clear');
     const locTitle = document.querySelector('[data-i18n="location_panel_title"]');
     if (locTitle) locTitle.textContent = tr('location_panel_title');
+    const sysInfoTitle = document.querySelector('[data-i18n="sysinfo_panel_title"]');
+    if (sysInfoTitle) sysInfoTitle.textContent = tr('sysinfo_panel_title');
+    const sysInfoRefresh = document.querySelector('[data-i18n="sysinfo_refresh"]');
+    if (sysInfoRefresh) sysInfoRefresh.textContent = tr('sysinfo_refresh');
+    document.querySelectorAll('[data-i18n="sysinfo_cpu"]').forEach(function(el) { el.textContent = tr('sysinfo_cpu'); });
+    document.querySelectorAll('[data-i18n="sysinfo_uptime"]').forEach(function(el) { el.textContent = tr('sysinfo_uptime'); });
+    document.querySelectorAll('[data-i18n="sysinfo_mem_free"]').forEach(function(el) { el.textContent = tr('sysinfo_mem_free'); });
     updateStatusUI(currentVpnState, currentLocation);
     renderLocationTable();
 }
@@ -187,6 +208,9 @@ function handleMessage(msg) {
         case 'LogLevelChanged':
             document.getElementById('logLevelSelect').value = msg.level;
             break;
+        case 'SystemInfo':
+            updateSysInfoPanel(msg);
+            break;
         case 'Error':
             console.error('Server error [' + msg.code + ']: ' + msg.message);
             showError(msg.code + ': ' + msg.message);
@@ -221,7 +245,7 @@ function updateStatusUI(state, locationName) {
 
     indicator.className = 'status-indicator ' + (STATE_CSS[state] || 'status-unknown');
 
-    var text = state ? tr(STATE_TEXT_KEY[state] || 'status_disconnected') : '\u2014';
+    const text = state ? tr(STATE_TEXT_KEY[state] || 'status_disconnected') : '\u2014';
     statusEl.textContent = text;
     updateLocationLabel(locationName, state);
 
@@ -311,7 +335,7 @@ function renderLocationTable() {
 
     if (filtered.length === 0) {
         body.innerHTML = '<tr><td colspan="2" class="location-empty">' +
-            escapeHtml(tr('location_auto')) + '</td></tr>';
+            escapeHtml(tr('no_results')) + '</td></tr>';
         return;
     }
 
@@ -396,9 +420,46 @@ function onToggleClick() {
     }
 }
 
-function sendWifi()    { sendMessage({ type: 'ReconnectWifi' }); }
-function sendRestart() { sendMessage({ type: 'Restart' }); }
-function sendRefresh() { sendMessage({ type: 'RefreshLocations' }); }
+function sendWifi()          { sendMessage({ type: 'ReconnectWifi' }); }
+function sendRestart()       { sendMessage({ type: 'Restart' }); }
+function sendRefresh()       { sendMessage({ type: 'RefreshLocations' }); }
+function sendGetSystemInfo() { sendMessage({ type: 'GetSystemInfo' }); }
+
+function sysInfoPanelOpen() {
+    const panel = document.getElementById('sysInfoPanel');
+    if (panel && panel.open) {
+        sendGetSystemInfo();
+    }
+}
+
+function updateSysInfoPanel(info) {
+    const temp   = document.getElementById('sysInfoTemp');
+    const uptime = document.getElementById('sysInfoUptime');
+    const mem    = document.getElementById('sysInfoMem');
+    if (temp)   temp.textContent   = info.cpu_temp_c !== null && info.cpu_temp_c !== undefined
+        ? info.cpu_temp_c.toFixed(1) + ' \u00b0C' : tr('sysinfo_na');
+    if (uptime) uptime.textContent = formatUptime(info.uptime_s);
+    if (mem)    mem.textContent    = formatMemory(info.mem_free_kb, info.mem_total_kb);
+}
+
+function formatUptime(secs) {
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    if (d > 0) return d + 'd ' + h + 'h ' + m + 'm';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+}
+
+function formatMemory(freeKb, totalKb) {
+    if (totalKb >= 1024 * 1024) {
+        return (freeKb / (1024 * 1024)).toFixed(1) + ' / ' + (totalKb / (1024 * 1024)).toFixed(1) + ' GB';
+    }
+    if (totalKb >= 1024) {
+        return Math.round(freeKb / 1024) + ' / ' + Math.round(totalKb / 1024) + ' MB';
+    }
+    return freeKb + ' / ' + totalKb + ' KB';
+}
 
 // ── Confirmation modal ────────────────────────────────────────────────────────
 
@@ -425,6 +486,15 @@ function confirmRestart() { showConfirm('confirm_restart_title', 'confirm_restar
 // ── Log panel ─────────────────────────────────────────────────────────────────
 
 const MAX_LOG_LINES = 500;
+let logPinned = true;
+
+function toggleLogPin() {
+    logPinned = !logPinned;
+    const btn = document.getElementById('logPinBtn');
+    if (btn) {
+        if (logPinned) { btn.classList.add('active'); } else { btn.classList.remove('active'); }
+    }
+}
 
 function appendLogLine(msg) {
     const el   = document.getElementById('logOutput');
@@ -433,9 +503,7 @@ function appendLogLine(msg) {
     line.textContent = msg.timestamp.slice(11) + ' ' +
                        msg.level.padEnd(5) + ' [' + msg.tag + '] ' + msg.message;
     el.appendChild(line);
-    if (el.scrollHeight - el.scrollTop <= el.clientHeight + 30) {
-        el.scrollTop = el.scrollHeight;
-    }
+    if (logPinned) { el.scrollTop = el.scrollHeight; }
     while (el.children.length > MAX_LOG_LINES) {
         el.removeChild(el.firstChild);
     }

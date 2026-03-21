@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- haven:layout=mobile -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>haven</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #F4F4F5;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overscroll-behavior-y: contain;
+      overflow-x: hidden;
+    }
+
+    /* ── Top bar ─────────────────────────────────────────────── */
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      flex-shrink: 0;
+      min-height: 52px;
+    }
+
+    .top-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .top-bar button {
+      min-height: 48px;
+      min-width: 48px;
+      padding: 6px 14px;
+      font-size: 14px;
+      border: 1px solid #4078F2;
+      border-radius: 6px;
+      background: #fff;
+      color: #4078F2;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .top-bar button:hover { background: #4078F2; color: #fff; }
+
+    .top-bar .icon-btn {
+      border-color: #ccc;
+      color: #555;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .top-bar .icon-btn:hover { background: #f0f0f0; color: #333; }
+
+    /* ── Error banner ────────────────────────────────────────── */
+
+    #errorBanner {
+      display: none;
+      background: #E45649;
+      color: #fff;
+      text-align: center;
+      padding: 8px 16px;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    /* ── Main content ────────────────────────────────────────── */
+
+    .container {
+      flex: 1;
+      padding: 24px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      width: 100%;
+      max-width: 520px;
+      margin: 0 auto;
+    }
+
+    .status-indicator {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      border: 4px solid transparent;
+      transition: background-color 0.3s, border-color 0.3s;
+    }
+
+    .status-connected     { background: #50A14F; border-color: #50A14F; }
+    .status-disconnected  { background: #E45649; border-color: #E45649; }
+    .status-connecting    { background: #C18401; border-color: #C18401; animation: pulse 1s ease-in-out infinite; }
+    .status-disconnecting { background: #C18401; border-color: #C18401; animation: pulse 1s ease-in-out infinite; }
+    .status-reconnecting  { background: #D5980A; border-color: #D5980A; animation: pulse 1s ease-in-out infinite; }
+    .status-unknown       { background: #9DA3AF; border: 4px dashed #999; }
+
+    @keyframes pulse {
+      0%   { opacity: 1; }
+      50%  { opacity: 0.35; }
+      100% { opacity: 1; }
+    }
+
+    .status-text {
+      font-size: 22px;
+      font-weight: bold;
+      color: #333;
+      text-align: center;
+    }
+
+    .location-label {
+      text-align: center;
+      min-height: 20px;
+      line-height: 1.4;
+    }
+
+    .loc-label-flag    { font-size: 20px; }
+    .loc-label-country { font-size: 16px; color: #333; font-weight: 500; }
+    .loc-label-city    { font-size: 14px; color: #777; }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+
+    .buttons {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+    }
+
+    #toggleBtn {
+      padding: 14px;
+      font-size: 17px;
+      font-weight: bold;
+      border: none;
+      border-radius: 10px;
+      background: #4078F2;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.2s;
+      width: 100%;
+      min-height: 54px;
+    }
+
+    #toggleBtn:hover:enabled   { background: #3063D5; }
+    #toggleBtn:disabled        { background: #B8BAC0; cursor: not-allowed; }
+    #toggleBtn.danger          { background: #E45649; }
+    #toggleBtn.danger:hover:enabled { background: #C73E32; }
+
+    #locationSheetBtn {
+      padding: 13px;
+      font-size: 15px;
+      font-weight: 500;
+      border: 1px solid #4078F2;
+      border-radius: 10px;
+      background: #fff;
+      color: #4078F2;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+      width: 100%;
+      min-height: 52px;
+    }
+
+    #locationSheetBtn:hover { background: #4078F2; color: #fff; }
+
+    .secondary-buttons {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .secondary-buttons button {
+      flex: 1;
+      padding: 12px;
+      font-size: 14px;
+      border: none;
+      border-radius: 10px;
+      background: #9DA3AF;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.2s;
+      min-height: 50px;
+    }
+
+    .secondary-buttons button:hover:enabled { background: #828896; }
+    .secondary-buttons button:disabled      { background: #C4C6CC; cursor: not-allowed; }
+
+    /* ── Log panel ───────────────────────────────────────────── */
+
+    #logPanel {
+      width: 100%;
+      border-top: 1px solid #ddd;
+      background: #fff;
+      flex-shrink: 0;
+    }
+
+    .log-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      color: #555;
+      user-select: none;
+      min-height: 48px;
+    }
+
+    .log-header::before {
+      content: '\25B6\FE0E';
+      font-size: 11px;
+      transition: transform 0.2s;
+      display: inline-block;
+    }
+
+    #logPanel.open .log-header::before { transform: rotate(90deg); }
+
+    .log-header > span { flex: 1; }
+
+    #logLevelSelect {
+      font-size: 16px;
+      padding: 5px 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      min-height: 48px;
+    }
+
+    .log-clear-btn {
+      font-size: 13px;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 4px;
+      background: #e9ecef;
+      color: #333;
+      cursor: pointer;
+      transition: background 0.15s;
+      min-height: 48px;
+    }
+
+    .log-clear-btn:hover { background: #dee2e6; }
+
+    .log-pin-btn {
+      font-size: 13px;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 4px;
+      background: #e9ecef;
+      color: #333;
+      cursor: pointer;
+      transition: background 0.15s;
+      min-height: 48px;
+    }
+
+    .log-pin-btn:hover  { background: #dee2e6; }
+    .log-pin-btn.active { background: #4078F2; color: #fff; }
+    .log-pin-btn.active:hover { background: #3063D5; }
+
+    #logOutput {
+      display: none;
+      height: 200px;
+      overflow-y: scroll;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+      font-family: monospace;
+      font-size: 0.75rem;
+      background: #1a1a1a;
+      color: #d4d4d4;
+      padding: 6px 8px calc(env(safe-area-inset-bottom, 0px) + 20px);
+    }
+
+    #logPanel.open #logOutput { display: block; }
+
+    #logOutput .log-warn  { color: #C18401; }
+    #logOutput .log-error { color: #E45649; }
+    #logOutput .log-debug { color: #6ea8fe; }
+    #logOutput .log-trace { color: #888; }
+
+    /* ── Location view (full-screen) ───────────────────────── */
+
+    #locationView {
+      position: fixed;
+      inset: 0;
+      background: #F4F4F5;
+      display: flex;
+      flex-direction: column;
+      z-index: 200;
+    }
+
+    #locationView[hidden] { display: none; }
+
+    .loc-view-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 8px 0 0;
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      flex-shrink: 0;
+      min-height: 52px;
+    }
+
+    .loc-view-back {
+      background: none;
+      border: none;
+      font-size: 22px;
+      color: #4078F2;
+      cursor: pointer;
+      min-height: 52px;
+      min-width: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .loc-view-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #333;
+      flex: 1;
+    }
+
+    #locationSearch {
+      width: 100%;
+      padding: 10px 16px;
+      font-size: 16px;
+      border: none;
+      border-bottom: 1px solid #ddd;
+      outline: none;
+      flex-shrink: 0;
+      min-height: 48px;
+      background: #fff;
+    }
+
+    .location-table-wrap {
+      overflow-y: auto;
+      flex: 1;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+
+    #locationTable {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 15px;
+    }
+
+    #locationTable tbody tr {
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #locationTable tbody tr:hover    { background: #f0f4ff; }
+    #locationTable tbody tr.selected { background: #d0e4ff; }
+
+    #locationTable td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #eee;
+    }
+
+    #locationTable td:first-child { vertical-align: middle; }
+    #locationTable td:last-child  { text-align: right; white-space: nowrap; vertical-align: middle; }
+
+    .loc-info    { display: flex; align-items: flex-start; gap: 8px; }
+    .loc-flag    { font-size: 20px; line-height: 1.3; flex-shrink: 0; }
+    .loc-country { font-size: 15px; color: #333; line-height: 1.3; }
+    .loc-city    { font-size: 13px; color: #777; margin-top: 2px; }
+    .loc-check   { color: #50A14F; font-weight: bold; }
+
+    #locationTable tbody tr.connected       { background: #DFF0DE; }
+    #locationTable tbody tr.connected:hover { background: #CBE9CA; }
+
+    .location-empty {
+      padding: 16px;
+      text-align: center;
+      color: #999;
+      font-size: 14px;
+    }
+
+    /* ── System info panel ────────────────────────────────── */
+
+    #sysInfoPanel {
+      width: 100%;
+      border-top: 1px solid #ddd;
+      background: #fff;
+      flex-shrink: 0;
+    }
+
+    #sysInfoPanel summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      color: #555;
+      user-select: none;
+      list-style: none;
+      min-height: 48px;
+    }
+
+    #sysInfoPanel summary::-webkit-details-marker { display: none; }
+
+    #sysInfoPanel summary::before {
+      content: '\25B6\FE0E';
+      font-size: 11px;
+      transition: transform 0.2s;
+      display: inline-block;
+    }
+
+    #sysInfoPanel[open] summary::before { transform: rotate(90deg); }
+
+    #sysInfoPanel summary > span { flex: 1; }
+
+    #sysInfoPanel summary > button {
+      font-size: 13px;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      background: #e9ecef;
+      color: #333;
+      cursor: pointer;
+      min-height: 48px;
+      transition: background 0.15s;
+    }
+
+    #sysInfoPanel summary > button:hover { background: #dee2e6; }
+
+    .sysinfo-content {
+      padding: 10px 16px 16px;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .sysinfo-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .sysinfo-label {
+      font-size: 11px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .sysinfo-value {
+      font-size: 15px;
+      font-weight: 500;
+      color: #333;
+      font-family: monospace;
+    }
+
+    /* ── Modal ───────────────────────────────────────────────── */
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 0;
+    }
+
+    .modal-overlay.active { display: flex; }
+
+    .modal-card {
+      background: #fff;
+      border-radius: 16px 16px 0 0;
+      padding: 24px 20px 32px;
+      width: 100%;
+      box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .modal-title   { font-size: 17px; font-weight: bold; color: #333; }
+    .modal-message { font-size: 14px; color: #555; line-height: 1.5; }
+
+    .modal-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .modal-buttons button {
+      padding: 14px;
+      font-size: 15px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+      min-height: 52px;
+    }
+
+    #modalConfirmBtn       { background: #E45649; color: #fff; }
+    #modalConfirmBtn:hover { background: #C73E32; }
+    #modalCancelBtn        { background: #e9ecef; color: #333; }
+    #modalCancelBtn:hover  { background: #dee2e6; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <button id="langToggle" onclick="toggleLanguage()">RU</button>
+    </div>
+    <div class="top-bar-right">
+      <button id="refreshBtn" class="icon-btn" onclick="sendRefresh()" title="Refresh">&#8635;</button>
+      <button id="logToggleBtn" class="icon-btn" onclick="toggleLogPanel()" title="Log">&#128196;</button>
+    </div>
+  </div>
+
+  <div id="errorBanner"></div>
+
+  <div class="container">
+    <div id="statusIndicator" class="status-indicator status-unknown"></div>
+    <div id="locationLabel" class="location-label"></div>
+    <div id="statusText" class="status-text">—</div>
+
+    <div class="buttons">
+      <button id="toggleBtn" onclick="onToggleClick()" disabled>…</button>
+      <button id="locationSheetBtn" onclick="openLocationView()">Locations</button>
+      <div class="secondary-buttons">
+        <button id="wifiBtn" onclick="confirmWifi()">Reconnect WiFi</button>
+        <button id="restartBtn" onclick="confirmRestart()">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <details id="sysInfoPanel" ontoggle="sysInfoPanelOpen()">
+    <summary>
+      <span data-i18n="sysinfo_panel_title">System Info</span>
+      <button data-i18n="sysinfo_refresh" onclick="sendGetSystemInfo()">Refresh</button>
+    </summary>
+    <div class="sysinfo-content">
+      <div class="sysinfo-item">
+        <span class="sysinfo-label" data-i18n="sysinfo_cpu">CPU Temp</span>
+        <span class="sysinfo-value" id="sysInfoTemp">&mdash;</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-label" data-i18n="sysinfo_uptime">Uptime</span>
+        <span class="sysinfo-value" id="sysInfoUptime">&mdash;</span>
+      </div>
+      <div class="sysinfo-item">
+        <span class="sysinfo-label" data-i18n="sysinfo_mem_free">Free Memory</span>
+        <span class="sysinfo-value" id="sysInfoMem">&mdash;</span>
+      </div>
+    </div>
+  </details>
+
+  <div id="logPanel">
+    <div class="log-header" onclick="toggleLogPanel()">
+      <span data-i18n="log_panel_title">Server Log</span>
+      <select id="logLevelSelect" onchange="setLogLevel(this.value)" onclick="event.stopPropagation()">
+        <option value="trace">TRACE</option>
+        <option value="debug">DEBUG</option>
+        <option value="info" selected>INFO</option>
+        <option value="warn">WARN</option>
+        <option value="error">ERROR</option>
+        <option value="off">OFF</option>
+      </select>
+      <button class="log-pin-btn active" id="logPinBtn" onclick="toggleLogPin(); event.stopPropagation()" title="Auto-scroll">&#128204;</button>
+      <button class="log-clear-btn" onclick="clearLog(); event.stopPropagation()" data-i18n="log_clear">&#128465; Clear</button>
+    </div>
+    <div id="logOutput"></div>
+  </div>
+
+  <div id="locationView" hidden>
+    <div class="loc-view-bar">
+      <button class="loc-view-back" onclick="closeLocationView()">&#8592;</button>
+      <span class="loc-view-title" data-i18n="location_panel_title">Locations</span>
+    </div>
+    <input id="locationSearch" type="text"
+           placeholder="Search locations..." oninput="filterLocations()" />
+    <div class="location-table-wrap">
+      <table id="locationTable">
+        <tbody id="locationBody">
+          <tr><td colspan="2" class="location-empty">Loading locations...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div id="modalTitle" class="modal-title"></div>
+      <div id="modalMessage" class="modal-message"></div>
+      <div class="modal-buttons">
+        <button id="modalConfirmBtn"></button>
+        <button id="modalCancelBtn"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/resources/web_resources/page_scripts/client.js"></script>
+  <script src="/resources/web_resources/page_scripts/client_mobile.js"></script>
+</body>
+</html>

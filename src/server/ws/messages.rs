@@ -16,6 +16,7 @@ pub enum ClientMessage {
     Restart,
     RefreshLocations,
     SetLogLevel { level: String },
+    GetSystemInfo,
 }
 
 #[derive(Debug, Serialize)]
@@ -42,6 +43,12 @@ pub enum ServerMessage {
     },
     LogLevelChanged {
         level: String,
+    },
+    SystemInfo {
+        cpu_temp_c:   Option<f32>,
+        uptime_s:     u64,
+        mem_free_kb:  u64,
+        mem_total_kb: u64,
     },
 }
 
@@ -195,5 +202,39 @@ mod tests {
         assert!(json.contains(r#""level":"INFO""#));
         assert!(json.contains(r#""tag":"ws""#));
         assert!(json.contains("test message"));
+    }
+
+    #[test]
+    fn client_get_system_info_deserializes() {
+        let msg: ClientMessage = deser(r#"{"type":"GetSystemInfo"}"#);
+        assert!(matches!(msg, ClientMessage::GetSystemInfo));
+    }
+
+    #[test]
+    fn server_system_info_with_temp_serializes() {
+        let json = ser(&ServerMessage::SystemInfo {
+            cpu_temp_c:   Some(52.3),
+            uptime_s:     3600,
+            mem_free_kb:  1_024_000,
+            mem_total_kb: 4_096_000,
+        });
+        assert!(json.contains(r#""type":"SystemInfo""#));
+        assert!(json.contains(r#""uptime_s":3600"#));
+        assert!(json.contains(r#""mem_free_kb":1024000"#));
+        assert!(json.contains(r#""mem_total_kb":4096000"#));
+        assert!(json.contains(r#""cpu_temp_c":52"#));
+    }
+
+    #[test]
+    fn server_system_info_without_temp_serializes() {
+        let json = ser(&ServerMessage::SystemInfo {
+            cpu_temp_c:   None,
+            uptime_s:     0,
+            mem_free_kb:  0,
+            mem_total_kb: 0,
+        });
+        assert!(json.contains(r#""type":"SystemInfo""#));
+        assert!(json.contains(r#""cpu_temp_c":null"#));
+        assert!(json.contains(r#""mem_total_kb":0"#));
     }
 }
