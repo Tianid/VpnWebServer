@@ -25,9 +25,9 @@ pub fn route(stream: &mut TcpStream, req: &HttpRequest, cache: LocationCache) ->
             "/health" => handle_health(stream),
             "/ws" => ws_handler::handle(stream, req, cache),
             p if p.starts_with("/resources/") => {
-                let file_path = p.trim_start_matches('/');
-                let ct = content_type(file_path);
-                serve_file(stream, file_path, ct)
+                let decoded = percent_decode(p.trim_start_matches('/'));
+                let ct = content_type(&decoded);
+                serve_file(stream, &decoded, ct)
             }
             _ => {
                 log_warn!("http", "404 Not Found: GET {}", path);
@@ -115,10 +115,38 @@ fn is_mobile_ua(ua: &str) -> bool {
 }
 
 fn content_type(path: &str) -> &'static str {
-    if path.ends_with(".js")   { "application/javascript" }
+    if path.ends_with(".js")        { "application/javascript" }
     else if path.ends_with(".html") { "text/html" }
     else if path.ends_with(".css")  { "text/css" }
+    else if path.ends_with(".svg")  { "image/svg+xml" }
     else                            { "application/octet-stream" }
+}
+
+fn percent_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let (Some(h), Some(l)) = (hex_val(b[i + 1]), hex_val(b[i + 2])) {
+                out.push((h << 4 | l) as char);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i] as char);
+        i += 1;
+    }
+    out
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn not_found() -> HttpResponseBuilder {
@@ -173,10 +201,36 @@ mod tests {
     }
 
     #[test]
+    fn content_type_svg() {
+        assert_eq!(content_type("flag.svg"), "image/svg+xml");
+        assert_eq!(content_type("resources/web_resources/assets/flags/US.svg"), "image/svg+xml");
+    }
+
+    #[test]
     fn content_type_unknown_falls_back_to_octet_stream() {
         assert_eq!(content_type("file.bin"), "application/octet-stream");
         assert_eq!(content_type("data.json"), "application/octet-stream");
         assert_eq!(content_type("noextension"), "application/octet-stream");
+    }
+
+    #[test]
+    fn percent_decode_plain_passthrough() {
+        assert_eq!(
+            percent_decode("resources/web_resources/assets/flags/US.svg"),
+            "resources/web_resources/assets/flags/US.svg"
+        );
+    }
+
+    #[test]
+    fn percent_decode_space() {
+        assert_eq!(percent_decode("some%20path.svg"), "some path.svg");
+        assert_eq!(percent_decode("a%20b%20c"), "a b c");
+    }
+
+    #[test]
+    fn percent_decode_invalid_sequence_passed_through() {
+        assert_eq!(percent_decode("a%2Zb"), "a%2Zb");
+        assert_eq!(percent_decode("a%"), "a%");
     }
 
     #[test]

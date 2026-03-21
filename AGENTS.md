@@ -1,7 +1,7 @@
 # AGENTS.md — haven
 
 > Machine-readable architecture guide for AI agents and contributors.  
-> Updated after full redesign on 2026-03-09 (Phases 0–8 complete; Session 2 refactoring complete; Session 3 flexible page routing complete; Session 4 project renamed to `haven` + code ordering convention applied; Session 9 autostart feature added; Session 12 log history added; Session 14 bug fixes + code quality pass; Session 15 new features: H-0013 /health, H-0014 periodic cache, H-0016 signal handler, H-0018 request logging, H-0019 rate limiting, H-0022 sysinfo panel).  
+> Updated after full redesign on 2026-03-09 (Phases 0–8 complete; Session 2 refactoring complete; Session 3 flexible page routing complete; Session 4 project renamed to `haven` + code ordering convention applied; Session 9 autostart feature added; Session 12 log history added; Session 14 bug fixes + code quality pass; Session 15 new features: H-0013 /health, H-0014 periodic cache, H-0016 signal handler, H-0018 request logging, H-0019 rate limiting, H-0022 sysinfo panel; Session 18 SVG flag icons).  
 > Update this file whenever the architecture changes.
 
 ---
@@ -37,6 +37,9 @@ haven/
 ├── Cargo.lock
 ├── resources/
 │   └── web_resources/
+│       ├── assets/
+│       │   └── flags/                # SVG flag icons named by ISO code (AU.svg, US.svg, …)
+│       │       └── DEFAULT.svg       # Fallback flag shown when no country-specific icon exists
 │       ├── html_pages/
 │       │   ├── index_desktop.html    # Desktop UI (served at GET / for non-mobile UA)
 │       │   └── index_mobile.html     # Mobile UI (served at GET / for mobile UA)
@@ -404,7 +407,7 @@ Add a variant + one match arm here to serve a new HTML page — no other files n
 Logs every request at `Debug` level before dispatch (`log_debug!("http", "{:?} {}", method, path)`).
 
 - `GET /` → `is_mobile_ua(req)` → `Page::Mobile.path()` or `Page::Desktop.path()`
-- `GET /resources/*` → serve file at path (strips leading `/`), content-type from extension
+- `GET /resources/*` → percent-decode path (via `percent_decode()` + `hex_val()` helpers), serve file, content-type from extension
 - `GET /ws` → `ws::handler::handle()`
 - `GET /health` → JSON `{"status":"ok","vpn":"<state>","uptime_s":N}` (calls `server::uptime_secs()`)
 - `POST /api/config` → JSON body `{ "log_level": "debug" }` → `logger::set_level()`
@@ -501,6 +504,8 @@ Handled entirely by **tungstenite 0.21** — no manual frame parsing.
 `resources/web_resources/page_scripts/client_desktop.js`,
 `resources/web_resources/page_scripts/client_mobile.js`
 
+**Static assets:** `resources/web_resources/assets/flags/<ISO>.svg` — SVG flag icons served at `/resources/web_resources/assets/flags/<ISO>.svg`. `DEFAULT.svg` is the fallback when a country-specific file is absent.
+
 Served as static files over HTTP. No build step — plain HTML + vanilla JavaScript.
 
 ### UI elements
@@ -588,7 +593,7 @@ and `shutdown`.
   `{"log_level":"debug"}` — no restart needed.
 - **Adding a new cross-compilation target:** Add one entry to the matrix in each
   workflow YAML; add the corresponding linker to `.cargo/config.toml`.
-- **Running tests:** `cargo test` — 106 unit tests across 10 modules.
+- **Running tests:** `cargo test` — 112 unit tests across 10 modules.
 - **Adding a new HTML page at a new GET route:** (1) add a variant to `enum Page` in `server/pages.rs` with its `path()` match arm; (2) add one match arm in `router::route()` in `server/router.rs` — no other files need to change.
 - **Cross-compiling for Raspberry Pi:**
   ```sh
