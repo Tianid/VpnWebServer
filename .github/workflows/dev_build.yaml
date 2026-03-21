@@ -1,0 +1,66 @@
+name: Dev Build
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  dev-release:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            apt_packages: gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross
+            archive_suffix: aarch64-linux-gnu
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Install cross-linker
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ${{ matrix.apt_packages }}
+
+      - name: Build
+        run: cargo build --release --target=${{ matrix.target }}
+
+      - name: Package archive
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          ARCHIVE="haven-dev-${SHA}-${{ matrix.archive_suffix }}"
+          mkdir -p "${ARCHIVE}"
+          cp target/${{ matrix.target }}/release/haven "${ARCHIVE}/"
+          cp -r resources "${ARCHIVE}/"
+          tar -czf "${ARCHIVE}.tar.gz" "${ARCHIVE}"
+
+      - name: Publish rolling dev release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-latest
+          name: "Dev Build (latest main)"
+          prerelease: true
+          body: |
+            Automated build from `main` branch.
+            Commit: ${{ github.sha }}
+            Built: ${{ github.event.head_commit.timestamp }}
+          files: "*.tar.gz"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

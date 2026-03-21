@@ -1,0 +1,87 @@
+name: Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: 'Archive label (e.g. feature-test, hotfix-wifi)'
+        required: false
+        default: 'manual'
+      publish_release:
+        description: 'Publish as GitHub pre-release?'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  manual-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            apt_packages: gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross
+            archive_suffix: aarch64-linux-gnu
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Install cross-linker
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ${{ matrix.apt_packages }}
+
+      - name: Build
+        run: cargo build --release --target=${{ matrix.target }}
+
+      - name: Package archive
+        id: pkg
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          LABEL="${{ github.event.inputs.label }}"
+          ARCHIVE="haven-${LABEL}-${SHA}-${{ matrix.archive_suffix }}"
+          mkdir -p "${ARCHIVE}"
+          cp target/${{ matrix.target }}/release/haven "${ARCHIVE}/"
+          cp -r resources "${ARCHIVE}/"
+          tar -czf "${ARCHIVE}.tar.gz" "${ARCHIVE}"
+          echo "archive_name=${ARCHIVE}" >> $GITHUB_OUTPUT
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: "${{ steps.pkg.outputs.archive_name }}"
+          path: "*.tar.gz"
+          retention-days: 90
+
+      - name: Publish as pre-release (optional)
+        if: ${{ github.event.inputs.publish_release == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "manual-${{ github.event.inputs.label }}-${{ steps.pkg.outputs.sha }}"
+          name: "Manual Build: ${{ github.event.inputs.label }} (${{ steps.pkg.outputs.sha }})"
+          prerelease: true
+          body: |
+            Manual build triggered from branch `${{ github.ref_name }}`.
+            Label: `${{ github.event.inputs.label }}`
+            Commit: ${{ github.sha }}
+          files: "*.tar.gz"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

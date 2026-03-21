@@ -1,0 +1,5 @@
+.windsurf/fabricator_runtime.py
+.windsurf/fabricator_kernel/
+.windsurf/hooks.json
+.windsurf/agents.json
+.fabricator/*/.kernel/
