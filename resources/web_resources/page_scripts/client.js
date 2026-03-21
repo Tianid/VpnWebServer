@@ -287,13 +287,13 @@ function updateLocationLabel(locationName, state) {
         });
         if (canon) {
             locLabel.innerHTML = '';
-            const flag = isoToFlag(canon.id);
-            if (flag) {
-                const flagEl = document.createElement('span');
-                flagEl.className = 'loc-label-flag';
-                flagEl.textContent = flag + '\u00a0';
-                locLabel.appendChild(flagEl);
-            }
+            const flagEl = document.createElement('img');
+            flagEl.className = 'loc-label-flag';
+            flagEl.src = countryFlagUrl(canon.id);
+            flagEl.alt = '';
+            flagEl.onerror = function () { this.src = countryFlagUrl('DEFAULT'); this.onerror = null; };
+            locLabel.appendChild(flagEl);
+            locLabel.appendChild(document.createTextNode('\u00a0'));
             const countryEl = document.createElement('span');
             countryEl.className = 'loc-label-country';
             countryEl.textContent = canon.country;
@@ -350,13 +350,12 @@ function renderLocationTable() {
         const tdName = document.createElement('td');
         const info = document.createElement('div');
         info.className = 'loc-info';
-        const flag = isoToFlag(loc.id);
-        if (flag) {
-            const flagEl = document.createElement('span');
-            flagEl.className = 'loc-flag';
-            flagEl.textContent = flag;
-            info.appendChild(flagEl);
-        }
+        const flagEl = document.createElement('img');
+        flagEl.className = 'loc-flag';
+        flagEl.src = countryFlagUrl(loc.id);
+        flagEl.alt = '';
+        flagEl.onerror = function () { this.src = countryFlagUrl('DEFAULT'); this.onerror = null; };
+        info.appendChild(flagEl);
         const textDiv = document.createElement('div');
         const countryDiv = document.createElement('div');
         countryDiv.className = 'loc-country';
@@ -538,12 +537,8 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;');
 }
 
-function isoToFlag(iso) {
-    if (!iso || iso.length !== 2) return '';
-    const up = iso.toUpperCase();
-    const base = 0x1F1E6 - 65;
-    return String.fromCodePoint(up.charCodeAt(0) + base) +
-           String.fromCodePoint(up.charCodeAt(1) + base);
+function countryFlagUrl(iso) {
+    return '/resources/web_resources/assets/flags/' + encodeURIComponent(iso) + '.svg';
 }
 
 function pingColor(ms) {
